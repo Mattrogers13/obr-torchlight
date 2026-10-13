@@ -1,0 +1,3 @@
+# Owlbear Rodeo fetches the manifest (and assets) cross-origin.
+/*
+  Access-Control-Allow-Origin: *
