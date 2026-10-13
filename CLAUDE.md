@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Shadow Crawler is an Owlbear Rodeo extension for running the Crawling phase of the Shadowdark RPG. It's a React-based popover plugin that provides tools for GMs to track torch timers, crawling turns, and random encounters during dungeon crawling sessions.
+Torchlight (a customized copy of Shadow Crawler by Alvaro Cavalcanti, MIT) is an Owlbear Rodeo extension for running the Crawling phase of the Shadowdark RPG. It's a React-based popover plugin that provides tools for GMs to track torch timers, crawling turns, and random encounters during dungeon crawling sessions.
 
 ## Development Commands
 
@@ -38,7 +38,7 @@ The app has two distinct entry modes controlled by URL parameters:
 
 Entry point: `src/main.tsx`
 
-The plugin ID `"es.memorablenaton.shadowcrawler"` is exported as `ID` from `src/main.tsx` and imported by `Main.tsx` to prefix all OBR broadcast channel names.
+The plugin ID `"io.github.mattrogers13.torchlight"` is exported as `ID` from `src/main.tsx` and imported by `Main.tsx` to prefix all OBR broadcast channel names.
 
 ### Owlbear Rodeo Integration
 
@@ -90,9 +90,9 @@ No global state management library is used. State is synchronised between GM and
 
 localStorage keys used across the app:
 
-- `shadowcrawlerState` — main game state (Main.tsx)
+- `torchlightState` — main game state (Main.tsx)
 - `map-location-keys-theme` — user's selected color palette (useTheme.ts)
-- `shadowcrawler-last-seen-version` — last version seen, drives WhatsNew modal (Navbar.tsx)
+- `torchlight-last-seen-version` — last version seen, drives WhatsNew modal (Navbar.tsx)
 
 ### Theming
 

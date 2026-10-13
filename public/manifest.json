@@ -1,13 +1,13 @@
 {
-  "name": "Shadow Crawler",
+  "name": "Torchlight",
   "version": "2026-08-13",
   "manifest_version": 1,
   "icon": "/img/logo.png",
-  "author": "Alvaro Cavalcanti",
-  "homepage_url": "https://github.com/alvarocavalcanti/shadowcrawler",
-  "description": "A set of tools for running the Crawling phase of the Shadowdark RPG.",
+  "author": "Matthew Rogers",
+  "homepage_url": "https://github.com/Mattrogers13/obr-torchlight",
+  "description": "Torch timer, crawl turn counter, and random encounter roller for the Shadowdark RPG. Based on Shadow Crawler by Alvaro Cavalcanti.",
   "action": {
-    "title": "Shadow Crawler",
+    "title": "Torchlight",
     "icon": "/img/icon.svg",
     "popover": "/",
     "height": 600,

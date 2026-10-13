@@ -43,4 +43,4 @@ export const releaseHighlights: ReleaseHighlight[] = [
   }
 ];
 
-export const changelogUrl = "https://github.com/alvarocavalcanti/shadowcrawler";
+export const changelogUrl = "https://github.com/Mattrogers13/obr-torchlight";

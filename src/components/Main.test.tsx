@@ -15,7 +15,7 @@ vi.mock('@owlbear-rodeo/sdk', () => ({
   },
 }));
 
-describe('Main (Shadow Crawler)', () => {
+describe('Main (Torchlight)', () => {
   beforeEach(() => {
     localStorage.clear();
     vi.clearAllMocks();

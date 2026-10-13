@@ -6,7 +6,7 @@ import "./index.css";
 import PluginGate from "./components/PluginGate";
 import Homepage from "./components/Homepage";
 
-export const ID = "es.memorablenaton.shadowcrawler";
+export const ID = "io.github.mattrogers13.torchlight";
 const container = document.getElementById("app");
 if (import.meta.env.MODE !== "test") {
   const root = createRoot(container!);

@@ -182,11 +182,11 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
       randomEncounterTurn,
       customMinutes,
     };
-    localStorage.setItem("shadowcrawlerState", JSON.stringify(state));
+    localStorage.setItem("torchlightState", JSON.stringify(state));
   };
 
   const loadStateFromLocalStorage = () => {
-    const savedState = localStorage.getItem("shadowcrawlerState");
+    const savedState = localStorage.getItem("torchlightState");
     if (savedState) {
       const state = JSON.parse(savedState);
       setMode(state.mode || timerModes.oneHour);
@@ -209,7 +209,7 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
   return player ? (
     showToPlayers ? (
       <div className="p-4">
-        <h1 className="text-2xl font-bold mb-4 text-theme">Shadow Crawler</h1>
+        <h1 className="text-2xl font-bold mb-4 text-theme">Torchlight</h1>
         <div className="bg-theme-card rounded-lg border border-theme p-4 mt-4">
           <h2 className="text-lg font-semibold mb-3 text-theme">Torch Timer</h2>
           <div className="text-theme-secondary">
@@ -237,7 +237,7 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
     )
   ) : (
     <div className="p-4">
-      <h1 className="text-2xl font-bold mb-2 text-theme">Shadow Crawler</h1>
+      <h1 className="text-2xl font-bold mb-2 text-theme">Torchlight</h1>
       <p className="mb-4 text-theme-secondary">
         A toolset for running the Crawling Phase of the{" "}
         <a
