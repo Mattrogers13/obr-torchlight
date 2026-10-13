@@ -5,7 +5,7 @@
   "icon": "/img/logo.png",
   "author": "Matthew Rogers",
   "homepage_url": "https://github.com/Mattrogers13/obr-torchlight",
-  "description": "Torch timer, crawl turn counter, and random encounter roller for the Shadowdark RPG. Based on Shadow Crawler by Alvaro Cavalcanti.",
+  "description": "Torch timers, crawl turn counter and encounter roller for Shadowdark. Based on Shadow Crawler by Alvaro Cavalcanti.",
   "action": {
     "title": "Torchlight",
     "icon": "/img/icon.svg",
