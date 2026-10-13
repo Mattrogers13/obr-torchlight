@@ -10,7 +10,8 @@ import { useTheme } from "../hooks/useTheme";
 import { ColorMode } from "../themes";
 
 export default function SPA() {
-  const [role, setRole] = React.useState<"GM" | "PLAYER">("GM");
+  // Unknown until OBR reports it, so a player never briefly runs the GM view.
+  const [role, setRole] = React.useState<"GM" | "PLAYER" | null>(null);
   const [colorMode, setColorMode] = useState<ColorMode>('dark');
   const { themeId, changeTheme } = useTheme(colorMode);
 
@@ -53,7 +54,7 @@ export default function SPA() {
   return (
     <Routes>
       <Route path="/" element={<Layout />}>
-        <Route index element={<Main player={role === "PLAYER"} />} />
+        <Route index element={role ? <Main player={role === "PLAYER"} /> : null} />
         <Route path={paths.about} element={<About version={version} currentTheme={themeId} onThemeChange={changeTheme} />} />
         <Route path="*" element={<NoMatch />} />
       </Route>

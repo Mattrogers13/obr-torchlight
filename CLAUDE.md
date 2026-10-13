@@ -38,7 +38,7 @@ The app has two distinct entry modes controlled by URL parameters:
 
 Entry point: `src/main.tsx`
 
-The plugin ID `"io.github.mattrogers13.torchlight"` is exported as `ID` from `src/main.tsx` and imported by `Main.tsx` to prefix all OBR broadcast channel names.
+The plugin ID `"io.github.mattrogers13.torchlight"` is exported as `ID` from `src/components/util/constants.ts` and prefixes the room metadata key and broadcast channel.
 
 ### Owlbear Rodeo Integration
 
@@ -46,31 +46,29 @@ The app uses `@owlbear-rodeo/sdk` for integration with Owlbear Rodeo:
 
 - **Scene Ready Check**: App waits for OBR scene to be ready before rendering main UI (`src/components/App.tsx`)
 - **Player Roles**: Detects if user is GM or PLAYER and passes a `player` boolean prop to `Main.tsx`, which renders different views accordingly
-- **Broadcast Messages**: Uses OBR's broadcast system for real-time sync between GM and players
 - **Theme Sync**: OBR's light/dark theme is applied by toggling the `dark` class on `<html>` in `SPA.tsx`
+- **Roles**: `SPA.tsx` renders nothing until `OBR.player.getRole()` resolves, so a player never briefly runs GM logic
 
-OBR broadcast channels (all prefixed with `ID`):
+Shared state lives in OBR room metadata under `${ID}/state` (see State Management). One broadcast channel:
 
-- `${ID}-countdown`: Current countdown value in seconds
-- `${ID}-mode`: Timer mode (`"1h"` vs `"10turns"`)
-- `${ID}-torchTurn`: Current torch turn number
-- `${ID}-show-to-players`: Visibility toggle boolean
+- `${ID}/light-out`: array of light names that just burned out; sent by a GM client with `destination: "ALL"`, every client shows the notification
 
 ### Routing
 
 Uses `react-router-dom` v6. Routes are defined in `SPA.tsx` with `Navbar.tsx` as the layout wrapper (renders tabs + `<Outlet />`):
 
 - `/` — `Main.tsx` (GM/player game interface)
-- `/about` — `About.tsx` (theme selector, social links, version, donation buttons)
+- `/about` — `About.tsx` (theme selector, repo link, credit to Shadow Crawler, version)
 
 Route paths are defined in `src/components/util/constants.ts`.
 
 ### Component Structure
 
-- **Main.tsx**: Core GM/player interface. Manages all game state, persists to localStorage, and broadcasts to players via OBR
+- **Main.tsx**: Core GM/player interface. Reads/writes room state via `useRoomState`, sends burn-out alerts (GM only)
+- **Lights.tsx**: Add-light form, GM light rows, and the read-only player light list
 - **SPA.tsx**: Sets up router, detects player role, syncs OBR theme to `dark` CSS class
 - **Navbar.tsx**: Tab navigation (Main / About), renders the `WhatsNew` modal, shows dev mode banner
-- **About.tsx**: Hosts `ThemeSelector`, social links, `DonationButtons`, and version display
+- **About.tsx**: Hosts `ThemeSelector`, repo link, credit line, and version display
 - **ThemeSelector.tsx**: UI for switching between the 4 color palettes defined in `src/themes.ts`
 - **WhatsNew.tsx**: Modal that shows release highlights when the version in `manifest.json` is newer than what's stored in localStorage
 - **PluginGate.tsx**: Waits for OBR SDK to be ready before rendering children
@@ -81,17 +79,20 @@ Route paths are defined in `src/components/util/constants.ts`.
 
 ### State Management
 
-The app uses local component state (React hooks) with localStorage persistence:
+Timer logic is pure functions in `src/lights.ts` (every time calc takes `now`, epoch ms UTC). Real-time lights store `endsAt` while running and `remainingSec` while paused; remaining time is always computed from the clock, never by counting ticks, so throttled background tabs can't drift. `useNow` only re-renders the display once a second while a light is running.
 
-- State is saved to localStorage on every change and loaded on mount (`src/components/Main.tsx`)
-- State includes: `mode`, `countdown`, `torchTurn`, `crawlingTurns`, `showToPlayers`, `randomEncounterRoll`, `randomEncounterTurn`
+`src/hooks/useRoomState.ts` syncs `RoomState` (`lights`, `showToPlayers`, `crawlTurns`, `encounterRoll`, `encounterTurn`) through OBR room metadata:
 
-No global state management library is used. State is synchronised between GM and players via OBR broadcast messages.
+- Room metadata is writable by any client and any extension, so everything read goes through `parseRoomState` (drops malformed lights, clamps numbers). Keep it that way.
+- Only GMs write (`canWrite`); players get a read-only view.
+- Every write bumps `rev`; incoming state with a lower `rev` is ignored (late echoes of our own earlier writes). `resync()` forces past it after a failed save.
+- Room metadata is capped at 16kB total across all extensions. Limits in `LIMITS` (20 lights, 40-char names) keep us small; failed writes show an error and resync.
+- Burn-out alerts fire once per light: the `alerted` flag persists in room state. A light that burned out while no GM panel was open alerts when a GM next opens it.
+- Known limitation: two GMs editing at the same instant is last-write-wins (the whole state is one metadata key).
 
-localStorage keys used across the app:
+localStorage keys (per browser, not shared):
 
-- `torchlightState` — main game state (Main.tsx)
-- `map-location-keys-theme` — user's selected color palette (useTheme.ts)
+- `torchlight-theme` — user's selected color palette (useTheme.ts)
 - `torchlight-last-seen-version` — last version seen, drives WhatsNew modal (Navbar.tsx)
 
 ### Theming
@@ -107,37 +108,4 @@ Both inline SVG and FontAwesome icons (`@fortawesome/react-fontawesome`) are use
 
 ### Analytics
 
-`src/utils.ts` exposes an `analytics` object that wraps `window.gtag` calls. Events are tracked for timer interactions, mode changes, and other key actions. The function is a no-op when `gtag` is not available.
-
-### Dev Mode
-
-Setting `localStorage.setItem("dev-mode", "true")` in the browser console activates a yellow "Development Mode" banner rendered by `Navbar.tsx`. Useful for local testing without modifying code.
-
-### Release Notes
-
-`src/releaseNotes.ts` contains the `releaseHighlights` array shown in the `WhatsNew` modal. Add a new entry here when shipping a release.
-
-### TypeScript Configuration
-
-- Target: ES2020
-- Strict mode enabled with additional linting rules (`noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch`)
-- Module resolution: bundler mode
-- JSX: react-jsx (React 17+ transform)
-- Always run `tsc --noEmit` after editing TypeScript files
-
-### Manifest
-
-Extension metadata lives in `public/manifest.json` and defines:
-
-- Plugin name, version, description
-- Icon and homepage URL
-- Popover dimensions (600px height, 400px width)
-
-### Version Management
-
-Version is managed in two places and must be kept in sync:
-
-- `package.json` (version field)
-- `public/manifest.json` (version field)
-
-The project uses date-based versioning (YYYY-MM-DD format).
+None. The upstream Google Analytics tag was removed; don't add tracking without asking.
