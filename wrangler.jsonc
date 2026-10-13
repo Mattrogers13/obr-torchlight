@@ -2,6 +2,10 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "torchlight",
   "compatibility_date": "2026-10-12",
+  // Explicit so we don't depend on defaults: workers.dev serves production,
+  // preview URLs serve PR builds.
+  "workers_dev": true,
+  "preview_urls": true,
   "assets": {
     "directory": "./dist/",
     "not_found_handling": "single-page-application"
