@@ -25,11 +25,11 @@ const Homepage: React.FC = () => {
     <div className="max-w-4xl mx-auto px-4 py-8">
       <div className="max-w-2xl mx-auto">
         <img
-          src="https://shadowcrawler.vercel.app/img/hero.png"
-          alt="Shadow Crawler"
+          src="/img/hero.png"
+          alt="Torchlight"
           className="mb-4 w-full max-w-full"
         />
-        <h1 className="text-3xl font-bold mb-4 text-theme">Shadow Crawler</h1>
+        <h1 className="text-3xl font-bold mb-4 text-theme">Torchlight</h1>
         <div className="mb-4 text-theme-secondary">
           <em>
             An{" "}
@@ -39,31 +39,11 @@ const Homepage: React.FC = () => {
             extension with tools for running the crawling phase of the
             Shadowdark RPG.
             <br />
-            By{" "}
-            <a href="http://memorablenaton.es" target="_blank" className="text-theme-primary hover:underline">
-              Alvaro Cavalcanti
-            </a>
-            <br />
-            <a
-              href="https://twitter.com/alvarocavalcant"
-              target="_blank"
-              className="m-1 inline-block"
-            >
-              <img
-                src="https://img.shields.io/twitter/follow/alvarocavalcant?style=social"
-                alt="Follow @alvarocavalcant on Twitter"
-              />
-            </a>
-            <a
-              href="https://github.com/alvarocavalcanti"
-              target="_blank"
-              className="m-1 inline-block"
-            >
-              <img
-                src="https://img.shields.io/badge/GitHub-alvarocavalcanti-blue?style=flat-square&logo=github"
-                alt="GitHub Profile"
-              />
-            </a>
+            By Matthew Rogers. Based on{" "}
+            <a href="https://github.com/alvarocavalcanti/shadowcrawler" target="_blank" className="text-theme-primary hover:underline">
+              Shadow Crawler
+            </a>{" "}
+            by Alvaro Cavalcanti (MIT License).
           </em>
         </div>
         <h2 className="text-2xl font-semibold mb-3 text-theme">Overview</h2>
@@ -80,26 +60,26 @@ const Homepage: React.FC = () => {
           to install the extension, and use the following URL:
           <br />
           <br />
-          <CodeBlock text="https://shadowcrawler.vercel.app/manifest.json" />
+          <CodeBlock text={`${window.location.origin}/manifest.json`} />
         </div>
         <h2 className="text-2xl font-semibold mb-3 text-theme">Features in Action</h2>
         <br />
         <h3 className="text-xl font-semibold mb-2 text-theme">Torch Timer</h3>
         <p className="mb-2 text-theme-secondary">Keep track of the torch either using real-time or turn count.</p>
         <img
-          src="https://shadowcrawler.vercel.app/img/torch-timer-01-real-time.png"
+          src="/img/torch-timer-01-real-time.png"
           alt="Real-time Torch"
           className="mb-2 w-full rounded border border-theme"
         />
         <img
-          src="https://shadowcrawler.vercel.app/img/torch-timer-01-turn-count.png"
+          src="/img/torch-timer-01-turn-count.png"
           alt="Turn Count Torch"
           className="mb-2 w-full rounded border border-theme"
         />
         <h3 className="text-xl font-semibold mb-2 mt-4 text-theme">Crawling Turns Counter</h3>
         <p className="mb-2 text-theme-secondary">Keep track of the current crawling turn.</p>
         <img
-          src="https://shadowcrawler.vercel.app/img/turn-counter.png"
+          src="/img/turn-counter.png"
           alt="Turn Counter"
           className="mb-2 w-full rounded border border-theme"
         />
@@ -109,7 +89,7 @@ const Homepage: React.FC = () => {
           simple dice roller. The result box will become red on a 1.
         </p>
         <img
-          src="https://shadowcrawler.vercel.app/img/random-encounter-roller.png"
+          src="/img/random-encounter-roller.png"
           alt="Dice Roller"
           className="mb-2 w-full rounded border border-theme"
         />
@@ -119,12 +99,12 @@ const Homepage: React.FC = () => {
           players. And they will see it as follows:
         </p>
         <img
-          src="https://shadowcrawler.vercel.app/img/torch-timer-02-real-time.png"
+          src="/img/torch-timer-02-real-time.png"
           alt="Real-time Torch"
           className="mb-2 w-full rounded border border-theme"
         />
         <img
-          src="https://shadowcrawler.vercel.app/img/torch-timer-02-turn-count.png"
+          src="/img/torch-timer-02-turn-count.png"
           alt="Turn Count Torch"
           className="mb-2 w-full rounded border border-theme"
         />
@@ -134,28 +114,13 @@ const Homepage: React.FC = () => {
           loads it at startup.
         </p>
         <h2 className="text-2xl font-semibold mb-3 mt-4 text-theme">Feedback</h2>
-        <p className="mb-2 text-theme-secondary">There are a few ways to provide feedback:</p>
-        <ul className="list-disc list-inside mb-4 text-theme-secondary">
-          <li>
-            <a
-              href="https://discord.com/channels/795808973743194152/1242847926108028988"
-              target="_blank"
-              className="text-theme-primary hover:underline"
-            >
-              Owlbear Rodeo Discord Thread
-            </a>
-          </li>
-          <li>
-            <a href="https://twitter.com/alvarocavalcant" target="_blank" className="text-theme-primary hover:underline">
-              Twitter/X
-            </a>
-          </li>
-          <li>
-            <a href="https://github.com/alvarocavalcanti" target="_blank" className="text-theme-primary hover:underline">
-              Github
-            </a>
-          </li>
-        </ul>
+        <p className="mb-4 text-theme-secondary">
+          Open an issue on{" "}
+          <a href="https://github.com/Mattrogers13/obr-torchlight/issues" target="_blank" className="text-theme-primary hover:underline">
+            GitHub
+          </a>
+          .
+        </p>
         <h2 className="text-2xl font-semibold mb-3 text-theme">Help Topics</h2>
         <About version={version} currentTheme="dark-fantasy" onThemeChange={() => {}} />
       </div>

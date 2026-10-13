@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { releaseHighlights, changelogUrl } from '../releaseNotes';
-import DonationButtons from './DonationButtons';
 
 interface WhatsNewProps {
   currentVersion: string;
@@ -87,13 +86,6 @@ const WhatsNew: React.FC<WhatsNewProps> = ({ currentVersion, storageKey }) => {
             >
               View full changelog on GitHub →
             </a>
-          </div>
-
-          <div className="mt-4 pt-4 border-t border-theme">
-            <p className="text-center text-sm text-theme-secondary mb-2">
-              Enjoying the extension? Consider supporting development:
-            </p>
-            <DonationButtons />
           </div>
 
           <div className="mt-4 flex justify-end">
