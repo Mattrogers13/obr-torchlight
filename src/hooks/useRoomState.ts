@@ -3,11 +3,9 @@ import OBR, { Metadata } from "@owlbear-rodeo/sdk";
 
 import { ID } from "../components/util/constants";
 import { RoomState, emptyRoomState, parseRoomState } from "../lights";
+import { errorMessage, notify } from "../utils";
 
 export const ROOM_KEY = `${ID}/state`;
-
-const errorMessage = (err: unknown) =>
-  err instanceof Error ? err.message : String(err);
 
 // Shared state lives in room metadata so every client sees the same lights,
 // late joiners get current state, and nothing is lost on reload.
@@ -32,7 +30,7 @@ export const useRoomState = (canWrite: boolean) => {
         .getMetadata()
         .then((metadata) => apply(metadata, true))
         .catch((err) =>
-          OBR.notification.show(`Torchlight couldn't load room state: ${errorMessage(err)}`, "ERROR"),
+          notify(`Torchlight couldn't load room state: ${errorMessage(err)}`, "ERROR"),
         ),
     [apply],
   );
@@ -51,7 +49,7 @@ export const useRoomState = (canWrite: boolean) => {
       OBR.room.setMetadata({ [ROOM_KEY]: next }).catch((err) => {
         // Room metadata is capped at 16kB shared by all extensions, so a
         // write can fail. Tell the GM and fall back to what the room holds.
-        OBR.notification.show(`Torchlight couldn't save: ${errorMessage(err)}`, "ERROR");
+        notify(`Torchlight couldn't save: ${errorMessage(err)}`, "ERROR");
         resync();
       });
     },

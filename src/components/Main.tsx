@@ -3,6 +3,7 @@ import OBR from "@owlbear-rodeo/sdk";
 
 import PlayerView from "./PlayerView";
 import { ID } from "./util/constants";
+import { errorMessage, notify } from "../utils";
 import { useRoomState } from "../hooks/useRoomState";
 import { useNow } from "../hooks/useNow";
 import {
@@ -43,7 +44,7 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
       OBR.broadcast.onMessage(LIGHT_OUT_CHANNEL, (event) => {
         const names = parseLightOut(event.data);
         if (names.length > 0) {
-          OBR.notification.show(`${names.join(", ")} went out!`, "WARNING");
+          notify(`${names.join(", ")} went out!`, "WARNING");
         }
       }),
     [],
@@ -70,9 +71,16 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
         ids.has(l.id) ? { ...pause(l, Date.now()), alerted: true } : l,
       ),
     }));
-    OBR.broadcast.sendMessage(LIGHT_OUT_CHANNEL, burnedOut.map((l) => l.name), {
-      destination: "ALL",
-    });
+    const names = burnedOut.map((l) => l.name);
+    OBR.broadcast
+      .sendMessage(LIGHT_OUT_CHANNEL, names, { destination: "ALL" })
+      .catch((err) =>
+        // The GM still needs the alert, and needs to know players missed it.
+        notify(
+          `${names.join(", ")} went out! (Couldn't alert players: ${errorMessage(err)})`,
+          "WARNING",
+        ),
+      );
   }, [player, loaded, state.lights, now, update]);
 
   const updateLight = (id: string, change: (light: Light) => Light) =>

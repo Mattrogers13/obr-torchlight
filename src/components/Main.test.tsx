@@ -39,10 +39,10 @@ vi.mock("@owlbear-rodeo/sdk", () => ({
       }),
     },
     broadcast: {
-      sendMessage: vi.fn(),
+      sendMessage: vi.fn().mockResolvedValue(undefined),
       onMessage: vi.fn().mockReturnValue(() => {}),
     },
-    notification: { show: vi.fn() },
+    notification: { show: vi.fn().mockResolvedValue("notification-id") },
   },
 }));
 
@@ -194,5 +194,30 @@ describe("Main (Torchlight)", () => {
       room.listeners.forEach((l) => l(room.metadata));
     });
     expect(screen.getByText("09")).toBeInTheDocument();
+  });
+
+  it("still alerts the GM when the burn-out broadcast fails", async () => {
+    vi.mocked(OBR.broadcast.sendMessage).mockRejectedValueOnce(new Error("rate limited"));
+    room.metadata = { [ROOM_KEY]: { lights: [burnedOutTorch(false)] } };
+    render(<Main player={false} />);
+    await waitFor(() =>
+      expect(OBR.notification.show).toHaveBeenCalledWith(
+        "Kira's torch went out! (Couldn't alert players: rate limited)", "WARNING",
+      ),
+    );
+  });
+
+  it("logs instead of crashing when a notification itself fails", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(OBR.notification.show).mockRejectedValueOnce(new Error("no UI"));
+    room.failWrites = true;
+    render(<Main player={false} />);
+    fireEvent.click(await screen.findByText("Light"));
+    await waitFor(() =>
+      expect(consoleError).toHaveBeenCalledWith(
+        "Torchlight notification failed: no UI", "Torchlight couldn't save: Metadata too large",
+      ),
+    );
+    consoleError.mockRestore();
   });
 });
