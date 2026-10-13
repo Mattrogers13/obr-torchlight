@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Torchlight (a customized copy of Shadow Crawler by Alvaro Cavalcanti, MIT) is an Owlbear Rodeo extension for running the Crawling phase of the Shadowdark RPG. It's a React-based popover plugin that provides tools for GMs to track torch timers, crawling turns, and random encounters during dungeon crawling sessions.
 
+Standalone repo (github.com/Mattrogers13/obr-torchlight), not a fork. Never pull from or PR to upstream `alvarocavalcanti/shadowcrawler`. Keep `LICENSE` and the credit lines (README, About, homepage, manifest).
+
 ## Development Commands
 
 ```bash
@@ -16,7 +18,14 @@ npm install
 npm run dev
 
 # Type check TypeScript files (no build output)
-tsc --noEmit
+npx tsc --noEmit
+
+# Run tests (vitest + jsdom)
+npm test
+
+# Validate Cloudflare config / serve dist/ like production
+npx wrangler deploy --dry-run
+npx wrangler dev --port 8799
 
 # Build for production (compiles TypeScript and builds with Vite)
 npm run build
@@ -26,6 +35,10 @@ npm run preview
 ```
 
 There is no ESLint configured — "linting" for this project means running `tsc --noEmit`.
+
+Node 24 required (`.node-version`, fnm auto-switches on cd). Node 25+ breaks vitest: Node's global `localStorage` shadows jsdom's. Non-interactive shells: `eval "$(fnm env --shell zsh)" && fnm use` first.
+
+Tests mock the OBR SDK in memory (`Main.test.tsx`: room metadata, broadcast, notification). SDK calls return promises, so mocks must too.
 
 ## Architecture
 
@@ -52,6 +65,10 @@ The app uses `@owlbear-rodeo/sdk` for integration with Owlbear Rodeo:
 Shared state lives in OBR room metadata under `${ID}/state` (see State Management). One broadcast channel:
 
 - `${ID}/light-out`: array of light names that just burned out; sent by a GM client with `destination: "ALL"`, every client shows the notification
+
+Manifest limits: `name` ≤ 45, `description` ≤ 128 chars (enforced by `src/manifest.test.ts`).
+
+docs.owlbear.rodeo is behind a Cloudflare bot check (WebFetch/curl fail). SDK source is readable via `gh api repos/owlbear-rodeo/sdk/contents/...`.
 
 ### Routing
 
@@ -94,6 +111,20 @@ localStorage keys (per browser, not shared):
 
 - `torchlight-theme` — user's selected color palette (useTheme.ts)
 - `torchlight-last-seen-version` — last version seen, drives WhatsNew modal (Navbar.tsx)
+
+### Deployment
+
+Cloudflare Workers static assets via Workers Builds. Push to `main` deploys https://torchlight.editbag.workers.dev; PR branches get `<branch>-torchlight.editbag.workers.dev` previews (URL posted as a PR comment).
+
+- `public/_headers` sets `Access-Control-Allow-Origin: *`. Required: OBR fetches the manifest cross-origin, and Workers send no CORS header by default.
+- `wrangler.jsonc` needs `"previews": {}` or `wrangler preview` (PR builds) fails. Previews don't apply the SPA fallback (deep links 404); production does.
+- Cloudflare build logs aren't reachable from here (the GitHub check has no log). Ask the user to download it from the dashboard.
+- `allowScripts` in package.json denies esbuild/workerd/fsevents install scripts; builds work without them.
+
+### Workflow
+
+- Branch + PR per change; squash-merge after CI and Workers Builds both pass. Features that need in-Owlbear testing stay open until the manual pass (`TESTING.md`).
+- Versions are dates (`YYYY-MM-DD` in package.json and manifest.json) and drive the WhatsNew modal. Add matching entries to `src/releaseNotes.ts` and `RELEASE-NOTES.md`.
 
 ### Theming
 
