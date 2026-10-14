@@ -124,7 +124,22 @@ export const reset = (light: Light): Light => ({
   alerted: false,
 });
 
-export const adjustTurns = (light: Light, delta: number): Light => {
+// GM correction: add or take away time. Keeps running or paused as it was.
+// Adding past full stretches the duration (remainingSec is capped at it).
+export const adjustTime = (light: Light, deltaSec: number, now: number): Light => {
+  if (light.kind !== "time") return light;
+  const left = clampInt(remainingSec(light, now) + deltaSec, 0, LIMITS.maxMinutes * 60);
+  return {
+    ...light,
+    durationSec: Math.max(light.durationSec, left),
+    remainingSec: left,
+    endsAt: isRunning(light) ? now + left * 1000 : null,
+    // Adding time to a burned-out light re-arms the alert.
+    alerted: left > 0 ? false : light.alerted,
+  };
+};
+
+export const adjustTurns =(light: Light, delta: number): Light => {
   if (light.kind !== "turns") return light;
   const turnsUsed = clampInt(light.turnsUsed + delta, 0, light.maxTurns);
   // Stepping back from burned out re-arms the alert.

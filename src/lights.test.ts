@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   LIMITS,
+  adjustTime,
   adjustTurns,
   cleanName,
   createLight,
@@ -69,6 +70,47 @@ describe("real-time lights", () => {
     expect(isRunning(fresh)).toBe(false);
     expect(remainingSec(fresh, T0)).toBe(60);
     expect(fresh.alerted).toBe(false);
+  });
+
+  it("adds and removes time while running or paused", () => {
+    const lit = createLight("a", "Torch", "time", 60, T0);
+    const t = T0 + 600_000; // 50:00 left
+    const less = adjustTime(lit, -5 * 60, t);
+    expect(isRunning(less)).toBe(true);
+    expect(remainingSec(less, t)).toBe(45 * 60);
+    expect(remainingSec(less, t + 1000)).toBe(45 * 60 - 1);
+
+    const paused = adjustTime(pause(lit, t), 60, t);
+    expect(isRunning(paused)).toBe(false);
+    expect(remainingSec(paused, t + 10_000_000)).toBe(51 * 60);
+  });
+
+  it("adding past full stretches the duration", () => {
+    const lit = createLight("a", "Torch", "time", 60, T0);
+    const more = adjustTime(lit, 10 * 60, T0);
+    expect(more.durationSec).toBe(70 * 60);
+    expect(remainingSec(more, T0)).toBe(70 * 60);
+    expect(adjustTime(lit, 1e9, T0).durationSec).toBe(LIMITS.maxMinutes * 60);
+  });
+
+  it("taking away more than is left burns it out without going negative", () => {
+    const lit = createLight("a", "Torch", "time", 5, T0);
+    const out = adjustTime(lit, -10 * 60, T0);
+    expect(remainingSec(out, T0)).toBe(0);
+    expect(isOut(out, T0)).toBe(true);
+  });
+
+  it("adding time to a burned-out light re-arms the alert", () => {
+    const out = { ...pause(createLight("a", "Torch", "time", 1, T0), T0 + 120_000), alerted: true };
+    const relit = adjustTime(out, 60, T0 + 130_000);
+    expect(isOut(relit, T0 + 130_000)).toBe(false);
+    expect(relit.alerted).toBe(false);
+    expect(adjustTime(out, -60, T0).alerted).toBe(true);
+  });
+
+  it("leaves turn lights alone", () => {
+    const turns = createLight("a", "Torch", "turns", 6, T0);
+    expect(adjustTime(turns, 600, T0)).toBe(turns);
   });
 });
 

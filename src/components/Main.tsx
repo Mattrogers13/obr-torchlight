@@ -10,6 +10,7 @@ import {
   LIMITS,
   Light,
   LightKind,
+  adjustTime,
   adjustTurns,
   cleanName,
   createLight,
@@ -198,6 +199,9 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
                 onToggle={() => toggleLight(light)}
                 onReset={() => updateLight(light.id, reset)}
                 onTurn={(delta) => updateLight(light.id, (l) => adjustTurns(l, delta))}
+                onAdjustTime={(deltaMin) =>
+                  updateLight(light.id, (l) => adjustTime(l, deltaMin * 60, Date.now()))
+                }
                 onRemove={() =>
                   update((s) => ({ ...s, lights: s.lights.filter((l) => l.id !== light.id) }))
                 }

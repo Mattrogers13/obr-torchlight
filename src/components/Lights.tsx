@@ -50,6 +50,9 @@ const buttonPrimary = "px-3 py-2 bg-theme-primary text-white rounded transition-
 const buttonSecondary = "px-3 py-2 bg-theme-secondary text-white rounded transition-colors";
 const inputClass = "px-3 py-2 border border-theme rounded bg-theme-card text-theme";
 
+// Minutes the GM can add (+) or take away (-) on a real-time light.
+const TIME_STEPS = [-10, -5, -1, 1, 5, 10];
+
 const LightReadout: React.FC<{ light: Light; now: number }> = ({ light, now }) => {
   const out = isOut(light, now);
   return (
@@ -138,8 +141,9 @@ export const LightRow: React.FC<{
   onToggle: () => void;
   onReset: () => void;
   onTurn: (delta: number) => void;
+  onAdjustTime: (deltaMin: number) => void;
   onRemove: () => void;
-}> = ({ light, now, onToggle, onReset, onTurn, onRemove }) => {
+}> = ({ light, now, onToggle, onReset, onTurn, onAdjustTime, onRemove }) => {
   const out = isOut(light, now);
   return (
     <li className={`border border-theme rounded p-3 ${out ? "opacity-60" : ""}`}>
@@ -175,6 +179,21 @@ export const LightRow: React.FC<{
           </button>
         </div>
       </div>
+      {light.kind === "time" && (
+        <div className="flex gap-1 mt-2">
+          {TIME_STEPS.map((m) => (
+            <button
+              key={m}
+              onClick={() => onAdjustTime(m)}
+              title={`${m > 0 ? "Add" : "Remove"} ${Math.abs(m)} min`}
+              aria-label={`${m > 0 ? "Add" : "Remove"} ${Math.abs(m)} minutes on ${light.name}`}
+              className="flex-1 px-1 py-1 text-sm bg-theme-secondary text-white rounded transition-colors"
+            >
+              {m > 0 ? `+${m}` : `\u2212${-m}`}m
+            </button>
+          ))}
+        </div>
+      )}
     </li>
   );
 };
