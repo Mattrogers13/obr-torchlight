@@ -72,8 +72,22 @@ OBR.onReady(async () => {
   };
 
   requestSync();
-  OBR.room.onMetadataChange(() => requestSync());
-  OBR.player.onChange(() => requestSync());
+  // Only what can change the answer: the GM's "players can light their own"
+  // flag, and this player's role. Other extensions' writes and selection
+  // changes (player.onChange fires on every click) don't.
+  let lastAllowFlag: boolean | null = null;
+  OBR.room.onMetadataChange((metadata) => {
+    const flag = parseRoomState(metadata[ROOM_KEY]).playersCanAdd;
+    if (flag === lastAllowFlag) return;
+    lastAllowFlag = flag;
+    requestSync();
+  });
+  let lastRole: string | null = null;
+  OBR.player.onChange((player) => {
+    if (player.role === lastRole) return;
+    lastRole = player.role;
+    requestSync();
+  });
   // GM only (checked inside): token lights and badges follow the timers.
   startTokenSync();
 });

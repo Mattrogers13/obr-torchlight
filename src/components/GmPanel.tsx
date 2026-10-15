@@ -95,7 +95,7 @@ const GmPanel: React.FC<{
   };
 
   // Put out the checked lights (wind, water, a dispel). They keep their
-  // time, show "Put out", and everyone gets the went-out alert.
+  // time, show "Put out", and everyone gets the went-out alert once saved.
   const putOut = (ids: Set<string>) => {
     const t = Date.now();
     const hit = entries.filter((e) => ids.has(e.light.id) && isActive(e.light, t));
@@ -103,8 +103,10 @@ const GmPanel: React.FC<{
     changeLights(
       hit.map((e) => e.ownerId),
       (lights) => mapLights(lights, (l) => (ids.has(l.id) && isActive(l, t) ? setAsideLight(l, t, "put-out") : l)),
-    );
-    broadcastLightOut(hit.map((e) => e.light.name));
+    ).then((saved) => {
+      // Only tell the room once the lights really are out.
+      if (saved) broadcastLightOut(hit.map((e) => e.light.name));
+    });
   };
 
   const timeLights = entries.map((e) => e.light).filter((l) => l.kind === "time" && isActive(l, now));

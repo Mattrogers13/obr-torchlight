@@ -711,5 +711,42 @@ describe("Main (Torchlight)", () => {
       expect(OBR.room.setMetadata).not.toHaveBeenCalled();
     });
   });
+
+  describe("fourth review fixes", () => {
+    it("shows another writer's change even when its rev is behind ours", async () => {
+      room.metadata = { [ROOM_KEY]: { rev: 0, lights: [turnTorch(0)] } };
+      render(<Main player={false} />);
+      const plus = await screen.findByTitle("Burn a turn");
+      room.deferEchoes = true;
+      fireEvent.click(plus); // our rev 1
+      fireEvent.click(plus); // our rev 2
+      await flushEcho();
+      await flushEcho();
+      // The right-click menu read rev 0 earlier and now writes rev 1 with a new light.
+      await act(async () => {
+        room.metadata = {
+          [ROOM_KEY]: { rev: 1, writer: "menu", seq: 1, lights: [turnTorch(2), lit("m", "Menu torch")] },
+        };
+        room.listeners.forEach((l) => l(room.metadata));
+      });
+      expect(screen.getByText("Menu torch")).toBeInTheDocument();
+    });
+
+    it("a Put out that fails to save doesn't tell the room the lights went out", async () => {
+      room.metadata = { [ROOM_KEY]: { lights: [lit("a", "Kira's torch")] } };
+      room.failWrites = true;
+      render(<Main player={false} />);
+      fireEvent.click(await screen.findByText("Put out…"));
+      fireEvent.click(screen.getByText("Put out 1"));
+      await waitFor(() =>
+        expect(OBR.notification.show).toHaveBeenCalledWith("Torchlight couldn't save: Metadata too large", "ERROR"),
+      );
+      expect(OBR.broadcast.sendMessage).not.toHaveBeenCalled();
+    });
+
+    const lit = (id: string, name: string) => ({
+      ...burnedOutTorch(false), id, name, endsAt: Date.now() + 600_000,
+    });
+  });
 });
 

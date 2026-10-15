@@ -18,6 +18,10 @@ import {
   setAsideLight,
 } from "./lights";
 
+// This writer's own stamp. Copying a doc keeps the previous writer's stamp,
+// which would make that client discard this write as a stale echo of its own.
+const menuStamp = () => ({ writer: `menu-${crypto.randomUUID().slice(0, 8)}`, seq: 1 });
+
 export interface Lighter {
   gm: boolean;
   playerId: string;
@@ -69,9 +73,10 @@ export const lightFromTokens = async (
     }
     if (lit.length === 0) return `Limit of ${LIMITS.maxLights} lights reached.`;
 
-    // A player may already have a light burning on one of these tokens.
-    const tokenIds = new Set(tokens.map((t) => t.id));
-    const update: Metadata = { [ROOM_KEY]: { ...state, lights, rev: state.rev + 1 } };
+    // A player may already have a light burning on one of the tokens we
+    // actually lit (not ones skipped at the limit, which keep their light).
+    const tokenIds = new Set(lit.map((l) => l.tokenId!));
+    const update: Metadata = { [ROOM_KEY]: { ...state, lights, rev: state.rev + 1, ...menuStamp() } };
     for (const [ownerId, doc] of Object.entries(parsePlayerDocs(metadata))) {
       const hit = doc.lights.filter((l) => l.tokenId && tokenIds.has(l.tokenId) && isActive(l, now));
       if (hit.length === 0) continue;
@@ -80,6 +85,7 @@ export const lightFromTokens = async (
         ...doc,
         lights: doc.lights.map((l) => (hit.includes(l) ? setAsideLight(l, now) : l)),
         rev: doc.rev + 1,
+        ...menuStamp(),
       };
     }
     await OBR.room.setMetadata(update);
@@ -93,7 +99,8 @@ export const lightFromTokens = async (
   if (tokens.length === 0) return "No token selected.";
   const key = playerKey(who.playerId);
   const doc = parsePlayerDoc(metadata[key]);
-  const current = doc.lights.find((l) => isActive(l, now));
+  // The same light replacePlayerLight will set aside (the newest active one).
+  const current = [...doc.lights].reverse().find((l) => isActive(l, now));
   const light = fresh(tokens[0]);
   await OBR.room.setMetadata({
     [key]: {
@@ -101,6 +108,7 @@ export const lightFromTokens = async (
       ownerName: cleanName(who.playerName, "Player"),
       lights: replacePlayerLight(doc.lights, light, now),
       rev: doc.rev + 1,
+      ...menuStamp(),
     },
   });
   return describe([light], current ? [current.name] : []);

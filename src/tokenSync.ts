@@ -1,6 +1,6 @@
 import OBR, { Image, Item, buildImage } from "@owlbear-rodeo/sdk";
 
-import { ID, PLAYER_KEY_PREFIX, ROOM_KEY } from "./constants";
+import { ID, ROOM_KEY } from "./constants";
 import {
   Light,
   LightSource,
@@ -9,6 +9,7 @@ import {
   isRunning,
   parsePlayerDocs,
   parseRoomState,
+  torchlightSignature,
 } from "./lights";
 import { errorMessage } from "./utils";
 
@@ -304,15 +305,23 @@ export const syncOnce = async () => {
   return owned.map((o) => o.light);
 };
 
-// Torchlight's slice of room metadata, to tell our changes from other
-// extensions' (room metadata is shared by every extension in the room).
-export const torchlightSignature = (metadata: Record<string, unknown>) =>
-  JSON.stringify(
-    Object.keys(metadata)
-      .filter((key) => key === ROOM_KEY || key.startsWith(PLAYER_KEY_PREFIX))
-      .sort()
-      .map((key) => [key, metadata[key]]),
-  );
+// Longest setTimeout delay browsers honor (2^31-1 ms); also a daily recheck.
+const MAX_TIMER_MS = 24 * 60 * 60 * 1000;
+// How soon to retry after a failed sync.
+export const SYNC_RETRY_MS = 10_000;
+
+// When to rerun: just after the next linked light runs out, sooner after a
+// failure, never at all if nothing is burning. endsAt comes from room metadata
+// and can be forged; setTimeout fires at once for delays past 2^31-1 ms, which
+// would spin the sync in a tight loop, so the delay is capped.
+export const nextSyncDelay = (lights: Light[], now: number, failed: boolean): number | null => {
+  const next = lights
+    .filter((l) => l.tokenId && isRunning(l) && l.endsAt! > now)
+    .reduce((min, l) => Math.min(min, l.endsAt!), Infinity);
+  const delay = next === Infinity ? Infinity : Math.min(next - now + 250, MAX_TIMER_MS);
+  const wait = failed ? Math.min(delay, SYNC_RETRY_MS) : delay;
+  return wait === Infinity ? null : wait;
+};
 
 // Reconciles now, on every room change and scene load, and again right when
 // the next linked timer runs out, so tokens go dark on time with no panel open.
@@ -321,13 +330,13 @@ export const startTokenSync = () => {
   let again = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
-  const schedule = (lights: Light[] | undefined) => {
+  // Lights from the last good run, so a failed run can still schedule.
+  let known: Light[] = [];
+
+  const schedule = (failed: boolean) => {
     clearTimeout(timer);
-    const now = Date.now();
-    const next = (lights ?? [])
-      .filter((l) => l.tokenId && isRunning(l) && l.endsAt! > now)
-      .reduce((min, l) => Math.min(min, l.endsAt!), Infinity);
-    if (next !== Infinity) timer = setTimeout(run, next - now + 250);
+    const wait = nextSyncDelay(known, Date.now(), failed);
+    if (wait !== null) timer = setTimeout(run, wait);
   };
 
   const run = async () => {
@@ -336,17 +345,20 @@ export const startTokenSync = () => {
       return;
     }
     busy = true;
-    let lights: Light[] | undefined;
+    let failed = false;
     try {
       do {
         again = false;
-        lights = await syncOnce();
+        const lights = await syncOnce();
+        if (lights) known = lights;
       } while (again);
     } catch (err) {
+      // Retry soon: a token whose light runs out meanwhile must still go dark.
+      failed = true;
       console.error(`Torchlight token sync failed: ${errorMessage(err)}`);
     } finally {
       busy = false;
-      schedule(lights);
+      schedule(failed);
     }
   };
 
