@@ -10,8 +10,14 @@ interface Manifest {
   action: { title: string };
 }
 
+const isDevBranch = (branch: string | undefined) => !!branch && branch !== PRODUCTION_BRANCH;
+
+// Shown next to the version on the About tab; "" on live and local builds.
+export const buildLabel = (branch: string | undefined, sha: string | undefined) =>
+  isDevBranch(branch) ? ["DEV", branch, sha?.slice(0, 7)].filter(Boolean).join(" · ") : "";
+
 export const manifestForBranch = <M extends Manifest>(manifest: M, branch: string | undefined): M =>
-  !branch || branch === PRODUCTION_BRANCH
+  !isDevBranch(branch)
     ? manifest
     : {
         ...manifest,

@@ -33,6 +33,13 @@ const About: React.FC<{ version: string; currentTheme: ThemeId; onThemeChange: (
       </div>
       <div className="mt-3 text-center">
         <em className="text-theme-secondary text-sm">Version: {version}</em>
+        {import.meta.env.VITE_BUILD_LABEL && (
+          <div className="mt-1">
+            <span className="inline-block px-2 py-0.5 rounded bg-theme-danger text-white text-xs font-bold">
+              {import.meta.env.VITE_BUILD_LABEL}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

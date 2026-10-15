@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import manifest from "../public/manifest.json";
-import { manifestForBranch } from "./devManifest";
+import { buildLabel, manifestForBranch } from "./devManifest";
 
 describe("manifestForBranch", () => {
   it("leaves main and local builds alone", () => {
@@ -16,5 +16,17 @@ describe("manifestForBranch", () => {
     expect(dev.name.length).toBeLessThanOrEqual(45);
     expect(dev.version).toBe(manifest.version);
     expect(manifest.name).toBe("Torchlight");
+  });
+});
+
+describe("buildLabel", () => {
+  it("is empty on main and local builds", () => {
+    expect(buildLabel("main", "abc1234def")).toBe("");
+    expect(buildLabel(undefined, undefined)).toBe("");
+  });
+
+  it("names the branch and short commit on dev builds", () => {
+    expect(buildLabel("dev", "abc1234def5678")).toBe("DEV · dev · abc1234");
+    expect(buildLabel("dev", undefined)).toBe("DEV · dev");
   });
 });
