@@ -103,7 +103,7 @@ const Homepage: React.FC = () => {
         <h3 className="text-xl font-semibold mb-2 mt-4 text-theme">Data Storage</h3>
         <p className="mb-2 text-theme-secondary">
           Lights are stored in the Owlbear Rodeo room, so they survive reloads
-          and late joiners see the same timers. Only GMs can change them.
+          and late joiners see the same timers.
         </p>
         <h2 className="text-2xl font-semibold mb-3 mt-4 text-theme">Feedback</h2>
         <p className="mb-4 text-theme-secondary">
