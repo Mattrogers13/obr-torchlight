@@ -3,7 +3,7 @@ import { render, renderHook, screen, fireEvent, waitFor, act } from "@testing-li
 import OBR from "@owlbear-rodeo/sdk";
 
 import Main, { LIGHT_OUT_CHANNEL } from "./Main";
-import { ROOM_KEY, useRoomState } from "../hooks/useRoomState";
+import { ROOM_KEY, playerKey, useRoomState } from "../hooks/useRoomState";
 import type { Light } from "../lights";
 
 // In-memory stand-in for OBR room metadata and broadcasts.
@@ -44,6 +44,11 @@ vi.mock("@owlbear-rodeo/sdk", () => ({
       onMessage: vi.fn().mockReturnValue(() => {}),
     },
     notification: { show: vi.fn().mockResolvedValue("notification-id") },
+    player: {
+      id: "me",
+      getName: vi.fn().mockResolvedValue("Kira"),
+      onChange: vi.fn().mockReturnValue(() => {}),
+    },
   },
 }));
 
@@ -178,7 +183,7 @@ describe("Main (Torchlight)", () => {
   });
 
   it("refuses writes from a read-only (player) client", async () => {
-    const { result } = renderHook(() => useRoomState(false));
+    const { result } = renderHook(() => useRoomState({ gm: false, playerId: "me" }));
     await waitFor(() => expect(result.current.loaded).toBe(true));
     act(() => result.current.update((st) => ({ ...st, showToPlayers: true })));
     expect(OBR.room.setMetadata).not.toHaveBeenCalled();
@@ -233,5 +238,104 @@ describe("Main (Torchlight)", () => {
       ),
     );
     consoleError.mockRestore();
+  });
+
+  describe("player-owned lights", () => {
+    const mineStored = () =>
+      room.metadata[playerKey("me")] as { ownerName: string; lights: Light[] } | undefined;
+
+    it("GM toggles the player permissions", async () => {
+      render(<Main player={false} />);
+      fireEvent.click(await screen.findByLabelText(/Players can light their own/));
+      fireEvent.click(screen.getByLabelText("Players can remove their own"));
+      await waitFor(() =>
+        expect(stored()).toMatchObject({ playersCanAdd: true, playersCanRemove: true }),
+      );
+    });
+
+    it("players see the placeholder when nothing is shared or allowed", async () => {
+      render(<Main player={true} />);
+      expect(await screen.findByText("Lights Hidden")).toBeInTheDocument();
+    });
+
+    it("a player lights their own torch into their own key, named after them", async () => {
+      room.metadata = { [ROOM_KEY]: { playersCanAdd: true } };
+      render(<Main player={true} />);
+      expect(await screen.findByText("Your Lights")).toBeInTheDocument();
+      await waitFor(() => expect(screen.getByPlaceholderText("Kira's torch")).toBeInTheDocument());
+      fireEvent.click(screen.getByText("Light"));
+      await waitFor(() => expect(mineStored()?.lights).toHaveLength(1));
+      expect(mineStored()).toMatchObject({ ownerName: "Kira", lights: [{ name: "Kira's torch" }] });
+      // Never touches the GM's shared state.
+      expect(OBR.room.setMetadata).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(OBR.room.setMetadata).mock.calls[0][0]).not.toHaveProperty(ROOM_KEY);
+    });
+
+    it("caps players at their light limit", async () => {
+      room.metadata = { [ROOM_KEY]: { playersCanAdd: true } };
+      render(<Main player={true} />);
+      const light = await screen.findByText("Light");
+      for (let i = 0; i < 5; i++) fireEvent.click(light);
+      await waitFor(() => expect(mineStored()?.lights).toHaveLength(3));
+      expect(screen.getByText("Limit of 3 lights reached.")).toBeInTheDocument();
+    });
+
+    it("a player can remove their own light only when the GM allows it", async () => {
+      room.metadata = {
+        [ROOM_KEY]: { playersCanAdd: true, playersCanRemove: false },
+        [playerKey("me")]: { rev: 1, ownerName: "Kira", lights: [turnTorch(0)] },
+      };
+      const { unmount } = render(<Main player={true} />);
+      expect(await screen.findByText("Lantern")).toBeInTheDocument();
+      expect(screen.queryByLabelText("Remove Lantern")).not.toBeInTheDocument();
+      unmount();
+
+      room.metadata = { ...room.metadata, [ROOM_KEY]: { playersCanAdd: true, playersCanRemove: true } };
+      render(<Main player={true} />);
+      fireEvent.click(await screen.findByLabelText("Remove Lantern"));
+      await waitFor(() => expect(mineStored()?.lights).toHaveLength(0));
+    });
+
+    it("players can't remove other players' or the GM's lights", async () => {
+      room.metadata = {
+        [ROOM_KEY]: { showToPlayers: true, playersCanRemove: true, lights: [burnedOutTorch(true)] },
+        [playerKey("someone-else")]: { rev: 1, ownerName: "Bo", lights: [turnTorch(0)] },
+      };
+      render(<Main player={true} />);
+      expect(await screen.findByText("Lantern")).toBeInTheDocument();
+      expect(screen.getByText("Kira's torch")).toBeInTheDocument();
+      expect(screen.queryByLabelText(/^Remove/)).not.toBeInTheDocument();
+    });
+
+    it("player hook refuses to write someone else's key", async () => {
+      const { result } = renderHook(() => useRoomState({ gm: false, playerId: "me" }));
+      await waitFor(() => expect(result.current.loaded).toBe(true));
+      act(() => result.current.updatePlayer("someone-else", (d) => ({ ...d, lights: [] })));
+      expect(OBR.room.setMetadata).not.toHaveBeenCalled();
+    });
+
+    it("GM sees player lights with the owner's name and can manage them", async () => {
+      room.metadata = { [playerKey("p2")]: { rev: 3, ownerName: "Bo", lights: [turnTorch(0)] } };
+      render(<Main player={false} />);
+      expect(await screen.findByText("(Bo)")).toBeInTheDocument();
+      fireEvent.click(screen.getByTitle("Burn a turn"));
+      await waitFor(() =>
+        expect(room.metadata[playerKey("p2")]).toMatchObject({ rev: 4, lights: [{ turnsUsed: 1 }] }),
+      );
+      fireEvent.click(screen.getByLabelText("Remove Lantern"));
+      await waitFor(() => expect(room.metadata[playerKey("p2")]).toMatchObject({ lights: [] }));
+    });
+
+    it("GM alerts once for a player's light that burned out", async () => {
+      room.metadata = {
+        [playerKey("p2")]: { rev: 1, ownerName: "Bo", lights: [burnedOutTorch(false)] },
+      };
+      render(<Main player={false} />);
+      await waitFor(() =>
+        expect(room.metadata[playerKey("p2")]).toMatchObject({ lights: [{ alerted: true }] }),
+      );
+      expect(OBR.broadcast.sendMessage).toHaveBeenCalledTimes(1);
+      expect(room.metadata[ROOM_KEY]).toBeUndefined();
+    });
   });
 });

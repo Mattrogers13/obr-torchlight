@@ -1,5 +1,13 @@
 # Release Notes
 
+## Version 2026-10-15
+
+### Features
+
+- Players can light their own torches (up to 3 each) when the GM turns on "Players can light their own"
+- Separate GM toggle "Players can remove their own"; players can never remove the GM's or other players' lights
+- GM sees and manages player lights (pause, adjust, remove) with the owner's name shown, and burn-out alerts cover them
+
 ## Version 2026-10-14
 
 ### Changes

@@ -9,6 +9,7 @@ import {
   isOut,
   isRunning,
   nextDefaultName,
+  parsePlayerDoc,
   parseRoomState,
   pause,
   remainingSec,
@@ -166,13 +167,13 @@ describe("parseRoomState (untrusted metadata)", () => {
   it("returns empty state for missing or non-object data", () => {
     for (const raw of [undefined, null, 42, "x", [], true]) {
       expect(parseRoomState(raw)).toEqual({
-        rev: 0, lights: [], showToPlayers: false,
+        rev: 0, lights: [], showToPlayers: false, playersCanAdd: false, playersCanRemove: false,
       });
     }
   });
 
   it("round-trips valid state", () => {
-    const state = { rev: 7, lights: [valid], showToPlayers: true };
+    const state = { rev: 7, lights: [valid], showToPlayers: true, playersCanAdd: true, playersCanRemove: false };
     expect(parseRoomState(JSON.parse(JSON.stringify(state)))).toEqual(state);
   });
 
@@ -220,5 +221,27 @@ describe("parseRoomState (untrusted metadata)", () => {
   it("truncates oversized names", () => {
     const state = parseRoomState({ lights: [{ ...valid, name: "x".repeat(500) }] });
     expect(state.lights[0].name).toHaveLength(LIMITS.maxNameLength);
+  });
+});
+
+describe("parsePlayerDoc (untrusted metadata)", () => {
+  const valid = createLight("ok", "Torch", "time", 60, T0);
+
+  it("returns an empty doc for junk", () => {
+    for (const raw of [undefined, null, 42, "x", []]) {
+      expect(parsePlayerDoc(raw)).toEqual({ rev: 0, ownerName: "", lights: [] });
+    }
+  });
+
+  it("caps player lights and cleans the owner name", () => {
+    const lights = ["a", "b", "c", "d", "e"].map((id) => ({ ...valid, id }));
+    const doc = parsePlayerDoc({ rev: 2, ownerName: "  " + "x".repeat(99), lights });
+    expect(doc.lights.map((l) => l.id)).toEqual(["a", "b", "c"]);
+    expect(doc.ownerName).toHaveLength(LIMITS.maxNameLength);
+    expect(doc.rev).toBe(2);
+  });
+
+  it("ignores a non-string owner name", () => {
+    expect(parsePlayerDoc({ ownerName: { evil: true } }).ownerName).toBe("");
   });
 });

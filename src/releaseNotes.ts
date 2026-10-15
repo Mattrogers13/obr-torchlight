@@ -6,6 +6,14 @@ export interface ReleaseHighlight {
 
 export const releaseHighlights: ReleaseHighlight[] = [
   {
+    version: "2026-10-15",
+    date: "October 15, 2026",
+    highlights: [
+      "🙋 Players can light their own torches (up to 3 each) when the GM allows it",
+      "🗑️ A separate GM toggle lets players remove their own lights",
+    ]
+  },
+  {
     version: "2026-10-14",
     date: "October 14, 2026",
     highlights: [
