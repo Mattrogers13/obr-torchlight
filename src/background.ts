@@ -1,7 +1,7 @@
 import OBR, { ContextMenuItem } from "@owlbear-rodeo/sdk";
 
 import { ID, ROOM_KEY } from "./constants";
-import { parsePlayersCanAdd, parseRoomState } from "./lights";
+import { parsePlayersCanAdd } from "./lights";
 import { startTokenSync } from "./tokenSync";
 import { errorMessage } from "./utils";
 
@@ -43,7 +43,7 @@ OBR.onReady(async () => {
   const sync = async () => {
     const gm = (await OBR.player.getRole()) === "GM";
     // Players only get the menu while the GM allows player lights.
-    const allowed = gm || parseRoomState((await OBR.room.getMetadata())[ROOM_KEY]).playersCanAdd;
+    const allowed = gm || parsePlayersCanAdd((await OBR.room.getMetadata())[ROOM_KEY]);
     if (allowed === shown) return;
     if (allowed) await OBR.contextMenu.create(MENU);
     else await OBR.contextMenu.remove(MENU_ID);

@@ -883,5 +883,18 @@ describe("Main (Torchlight)", () => {
       expect(await screen.findByText("Lantern", { selector: "li span" })).toBeInTheDocument();
     });
   });
+
+  describe("eighth review fixes", () => {
+    it("a light reset while its burn-out record is still saving isn't announced", async () => {
+      room.metadata = { [ROOM_KEY]: { lights: [burnedOutTorch(false)] } };
+      room.deferWrites = true;
+      render(<Main player={false} />);
+      await screen.findByText("Kira's torch");
+      await waitFor(() => expect(room.writeQueue.length).toBeGreaterThan(0)); // record in flight
+      fireEvent.click(screen.getByTitle("Reset")); // re-armed before it lands
+      while (room.writeQueue.length) await flushWrite();
+      expect(OBR.broadcast.sendMessage).not.toHaveBeenCalled();
+    });
+  });
 });
 

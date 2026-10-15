@@ -359,6 +359,16 @@ const parseStamp = (raw: Record<string, unknown>, into: Stamp) => {
   if (finite(raw.seq) && raw.seq >= 0) into.seq = Math.floor(raw.seq);
 };
 
+// The only way a doc should be prepared for writing: bump rev and put this
+// writer's stamp on it. A copied doc that isn't restamped carries another
+// client's stamp, and that client would discard the write as its own echo.
+export const restamp = <D extends Stamp & { rev: number }>(doc: D, stamp: Stamp): D => ({
+  ...doc,
+  rev: doc.rev + 1,
+  writer: stamp.writer,
+  seq: stamp.seq,
+});
+
 // Torchlight's slice of room metadata, to tell our changes from other
 // extensions' (room metadata is shared by every extension in the room).
 export const torchlightSignature = (metadata: Record<string, unknown>) =>
