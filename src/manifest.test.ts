@@ -13,5 +13,8 @@ describe("manifest.json", () => {
     expect(manifest.manifest_version).toBe(1);
     expect(manifest.version).toBeTruthy();
     expect(manifest.action.popover).toBe("/");
+    // The token right-click menu lives in the background page.
+    // Cloudflare serves pages without .html (background.html 307s to /background).
+    expect(manifest.background_url).toBe("/background");
   });
 });

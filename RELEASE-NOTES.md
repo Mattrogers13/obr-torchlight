@@ -1,6 +1,17 @@
 # Release Notes
 
-## Version 2026-10-16
+## Version 2026-10-15.2
+
+### Features
+
+- Right-click a character token and choose "Light torch" to start a 60-minute real-time torch named after the token ("Kira's torch"). Works with several tokens selected.
+- Players get the same menu item on tokens they can edit, only while "Players can light their own" is on; their 3-light cap applies.
+
+### Changes
+
+- New background page (`background_url`) that runs while Torchlight is enabled, panel open or not
+
+## Version 2026-10-15.1
 
 ### Features
 

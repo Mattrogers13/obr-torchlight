@@ -6,8 +6,16 @@ export interface ReleaseHighlight {
 
 export const releaseHighlights: ReleaseHighlight[] = [
   {
-    version: "2026-10-16",
-    date: "October 16, 2026",
+    version: "2026-10-15.2",
+    date: "October 15, 2026",
+    highlights: [
+      "🖱️ Right-click a character token and choose Light torch to start a 60-minute torch named after it",
+      "🙋 Players get it too on tokens they can edit, when the GM allows player lights",
+    ]
+  },
+  {
+    version: "2026-10-15.1",
+    date: "October 15, 2026",
     highlights: [
       "🔔 The GM gets a notification when a player lights or removes a torch",
       "⏯️ Pause all / Resume all moved to the top of the GM panel",

@@ -18,6 +18,16 @@ const devManifest = () => ({
 
 export default defineConfig({
   plugins: [react(), devManifest()],
+  build: {
+    rollupOptions: {
+      // background.html runs while Torchlight is enabled, panel open or not
+      // (manifest background_url); it owns the token right-click menu.
+      input: {
+        main: resolve('index.html'),
+        background: resolve('background.html'),
+      },
+    },
+  },
   define: {
     'import.meta.env.VITE_BUILD_LABEL': JSON.stringify(
       buildLabel(process.env.WORKERS_CI_BRANCH, process.env.WORKERS_CI_COMMIT_SHA),

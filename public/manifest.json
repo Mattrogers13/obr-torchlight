@@ -1,8 +1,9 @@
 {
   "name": "Torchlight",
-  "version": "2026-10-16",
+  "version": "2026-10-15.2",
   "manifest_version": 1,
   "icon": "/img/logo.png",
+  "background_url": "/background",
   "author": "Matthew Rogers",
   "homepage_url": "https://github.com/Mattrogers13/obr-torchlight",
   "description": "Torch and light source timers for Shadowdark, shared with your players. Based on Shadow Crawler by Alvaro Cavalcanti.",
