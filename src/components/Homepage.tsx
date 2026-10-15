@@ -97,7 +97,7 @@ const Homepage: React.FC = () => {
           .
         </p>
         <h2 className="text-2xl font-semibold mb-3 text-theme">Help Topics</h2>
-        <About version={version} currentTheme="dark-fantasy" onThemeChange={() => {}} />
+        <About version={version} currentTheme="dark-fantasy" onThemeChange={() => {}} showHomepageLink={false} />
       </div>
     </div>
   );

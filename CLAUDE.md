@@ -75,7 +75,7 @@ docs.owlbear.rodeo is behind a Cloudflare bot check (WebFetch/curl fail). SDK so
 Uses `react-router-dom` v6. Routes are defined in `SPA.tsx` with `Navbar.tsx` as the layout wrapper (renders tabs + `<Outlet />`):
 
 - `/` — `Main.tsx` (GM/player game interface)
-- `/about` — `About.tsx` (theme selector, repo link, credit to Shadow Crawler, version)
+- `/about` — `About.tsx` (theme selector, homepage link, repo link, credits, version)
 
 Route paths are defined in `src/components/util/constants.ts`.
 
