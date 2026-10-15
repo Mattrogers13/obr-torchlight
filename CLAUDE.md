@@ -98,14 +98,19 @@ Route paths are defined in `src/components/util/constants.ts`.
 
 Timer logic is pure functions in `src/lights.ts` (every time calc takes `now`, epoch ms UTC). Real-time lights store `endsAt` while running and `remainingSec` while paused; remaining time is always computed from the clock, never by counting ticks, so throttled background tabs can't drift. `useNow` only re-renders the display once a second while a light is running.
 
-`src/hooks/useRoomState.ts` syncs `RoomState` (`lights`, `showToPlayers`) through OBR room metadata:
+`src/hooks/useRoomState.ts` syncs two kinds of room metadata docs:
 
-- Room metadata is writable by any client and any extension, so everything read goes through `parseRoomState` (drops malformed lights, clamps numbers). Keep it that way.
-- Only GMs write (`canWrite`); players get a read-only view.
-- Every write bumps `rev`; incoming state with a lower `rev` is ignored (late echoes of our own earlier writes). `resync()` forces past it after a failed save.
-- Room metadata is capped at 16kB total across all extensions. Limits in `LIMITS` (20 lights, 40-char names) keep us small; failed writes show an error and resync.
-- Burn-out alerts fire once per light: the `alerted` flag persists in room state. A light that burned out while no GM panel was open alerts when a GM next opens it.
-- Known limitation: two GMs editing at the same instant is last-write-wins (the whole state is one metadata key).
+- `${ID}/state` (`RoomState`: GM `lights`, `showToPlayers`, `playersCanAdd`, `playersCanRemove`). Only GMs write it.
+- `${ID}/player/<playerId>` (`PlayerDoc`: `ownerName`, up to 3 `lights`). Each player writes only their own; GMs can write any. Separate keys so a player's write can't clobber a GM edit (each key is last-write-wins).
+
+Rules:
+
+- Room metadata is writable by any client and any extension, so everything read goes through `parseRoomState` / `parsePlayerDoc` (drops malformed lights, clamps numbers). Keep it that way.
+- Player permissions are enforced client-side only (there's no server). A tampering client could write any key; acceptable for a game table, but don't build anything on the assumption it can't.
+- Every write bumps that doc's `rev`; incoming docs with a lower `rev` are ignored (late echoes of our own earlier writes). `resync()` forces past it after a failed save.
+- Room metadata is capped at 16kB total across all extensions. Limits in `LIMITS` (20 GM lights, 3 per player, 40-char names) keep us small; failed writes show an error and resync.
+- Burn-out alerts fire once per light, player lights included: the GM client detects them and sets `alerted` in the owning doc. A light that burned out while no GM panel was open alerts when a GM next opens it.
+- Known limitation: two writers editing the same doc at the same instant is last-write-wins.
 
 localStorage keys (per browser, not shared):
 

@@ -23,10 +23,23 @@ export interface RoomState {
   rev: number;
   lights: Light[];
   showToPlayers: boolean;
+  // GM permission toggles for player-owned lights (see PlayerDoc).
+  playersCanAdd: boolean;
+  playersCanRemove: boolean;
+}
+
+// A player's own lights. Each player writes only their own metadata key, so
+// a player lighting a torch can't clobber a GM edit (or another player's)
+// the way concurrent writes to the single shared key would.
+export interface PlayerDoc {
+  rev: number;
+  ownerName: string;
+  lights: Light[];
 }
 
 export const LIMITS = {
   maxLights: 20,
+  maxPlayerLights: 3,
   maxNameLength: 40,
   minMinutes: 1,
   maxMinutes: 1440,
@@ -41,7 +54,11 @@ export const emptyRoomState = (): RoomState => ({
   rev: 0,
   lights: [],
   showToPlayers: false,
+  playersCanAdd: false,
+  playersCanRemove: false,
 });
+
+export const emptyPlayerDoc = (): PlayerDoc => ({ rev: 0, ownerName: "", lights: [] });
 
 const clampInt = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, Math.round(value)));
@@ -189,22 +206,41 @@ export const parseLight = (raw: unknown): Light | null => {
   };
 };
 
+const parseLights = (raw: unknown, max: number): Light[] => {
+  const lights: Light[] = [];
+  if (!Array.isArray(raw)) return lights;
+  const seen = new Set<string>();
+  for (const item of raw) {
+    const light = parseLight(item);
+    if (light && !seen.has(light.id)) {
+      seen.add(light.id);
+      lights.push(light);
+    }
+    if (lights.length >= max) break;
+  }
+  return lights;
+};
+
+const parseRev = (raw: Record<string, unknown>) =>
+  finite(raw.rev) && raw.rev >= 0 ? Math.floor(raw.rev) : 0;
+
 export const parseRoomState = (raw: unknown): RoomState => {
   const state = emptyRoomState();
   if (!isObject(raw)) return state;
 
-  if (Array.isArray(raw.lights)) {
-    const seen = new Set<string>();
-    for (const item of raw.lights) {
-      const light = parseLight(item);
-      if (light && !seen.has(light.id)) {
-        seen.add(light.id);
-        state.lights.push(light);
-      }
-      if (state.lights.length >= LIMITS.maxLights) break;
-    }
-  }
-  if (finite(raw.rev) && raw.rev >= 0) state.rev = Math.floor(raw.rev);
+  state.lights = parseLights(raw.lights, LIMITS.maxLights);
+  state.rev = parseRev(raw);
   if (typeof raw.showToPlayers === "boolean") state.showToPlayers = raw.showToPlayers;
+  if (typeof raw.playersCanAdd === "boolean") state.playersCanAdd = raw.playersCanAdd;
+  if (typeof raw.playersCanRemove === "boolean") state.playersCanRemove = raw.playersCanRemove;
   return state;
+};
+
+export const parsePlayerDoc = (raw: unknown): PlayerDoc => {
+  const doc = emptyPlayerDoc();
+  if (!isObject(raw)) return doc;
+  doc.rev = parseRev(raw);
+  doc.lights = parseLights(raw.lights, LIMITS.maxPlayerLights);
+  if (typeof raw.ownerName === "string") doc.ownerName = cleanName(raw.ownerName, "");
+  return doc;
 };

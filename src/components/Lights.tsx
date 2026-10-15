@@ -67,8 +67,9 @@ const LightReadout: React.FC<{ light: Light; now: number }> = ({ light, now }) =
 export const AddLightForm: React.FC<{
   defaultName: string;
   disabled: boolean;
+  limit?: number;
   onAdd: (name: string, kind: LightKind, amount: number) => void;
-}> = ({ defaultName, disabled, onAdd }) => {
+}> = ({ defaultName, disabled, limit = LIMITS.maxLights, onAdd }) => {
   const [name, setName] = useState("");
   const [kind, setKind] = useState<LightKind>("time");
   const [amount, setAmount] = useState(DEFAULT_MINUTES);
@@ -129,7 +130,7 @@ export const AddLightForm: React.FC<{
         </button>
       </div>
       {disabled && (
-        <p className="text-sm text-theme-secondary">Limit of {LIMITS.maxLights} lights reached.</p>
+        <p className="text-sm text-theme-secondary">Limit of {limit} lights reached.</p>
       )}
     </form>
   );
@@ -137,19 +138,22 @@ export const AddLightForm: React.FC<{
 
 export const LightRow: React.FC<{
   light: Light;
+  // Player name for a player-owned light; undefined for the GM's own.
+  owner?: string;
   now: number;
   onToggle: () => void;
   onReset: () => void;
   onTurn: (delta: number) => void;
   onAdjustTime: (deltaMin: number) => void;
   onRemove: () => void;
-}> = ({ light, now, onToggle, onReset, onTurn, onAdjustTime, onRemove }) => {
+}> = ({ light, owner, now, onToggle, onReset, onTurn, onAdjustTime, onRemove }) => {
   const out = isOut(light, now);
   return (
     <li className={`border border-theme rounded p-3 ${out ? "opacity-60" : ""}`}>
       <div className="flex items-center justify-between mb-2">
         <span className="font-semibold text-theme truncate" title={light.name}>
           {light.name}
+          {owner && <span className="ml-2 text-sm font-normal text-theme-secondary">({owner})</span>}
           {out && <span className="ml-2 text-sm text-theme-danger">Out</span>}
         </span>
         <button onClick={onRemove} title="Remove" aria-label={`Remove ${light.name}`} className="text-theme-secondary hover:text-theme text-xl leading-none">
@@ -198,15 +202,24 @@ export const LightRow: React.FC<{
   );
 };
 
-export const PlayerLightList: React.FC<{ lights: Light[]; now: number }> = ({ lights, now }) =>
+export const PlayerLightList: React.FC<{
+  lights: Light[];
+  now: number;
+  onRemove?: (light: Light) => void;
+}> = ({ lights, now, onRemove }) =>
   lights.length === 0 ? (
     <p className="text-theme-secondary">No lights burning.</p>
   ) : (
     <ul className="flex flex-col gap-2">
       {lights.map((light) => (
-        <li key={light.id} className={`flex items-center justify-between border border-theme rounded p-3 ${isOut(light, now) ? "opacity-60" : ""}`}>
+        <li key={light.id} className={`flex items-center gap-2 border border-theme rounded p-3 ${isOut(light, now) ? "opacity-60" : ""}`}>
           <span className="text-theme truncate" title={light.name}>{light.name}</span>
-          <LightReadout light={light} now={now} />
+          <span className="ml-auto"><LightReadout light={light} now={now} /></span>
+          {onRemove && (
+            <button onClick={() => onRemove(light)} title="Remove" aria-label={`Remove ${light.name}`} className="text-theme-secondary hover:text-theme text-xl leading-none">
+              ×
+            </button>
+          )}
         </li>
       ))}
     </ul>

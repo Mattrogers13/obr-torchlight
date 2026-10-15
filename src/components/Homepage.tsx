@@ -93,6 +93,13 @@ const Homepage: React.FC = () => {
           alt="Player view: read-only list of lights and their remaining time"
           className="mb-2 w-full max-w-sm mx-auto rounded border border-theme"
         />
+        <h3 className="text-xl font-semibold mb-2 mt-4 text-theme">Player Lights</h3>
+        <p className="mb-2 text-theme-secondary">
+          The GM can let players light their own torches (up to 3 each), and
+          separately let them remove their own. Players can never remove the
+          GM's lights or anyone else's. The GM sees every player light, with
+          its owner's name, and can pause, adjust or remove it.
+        </p>
         <h3 className="text-xl font-semibold mb-2 mt-4 text-theme">Data Storage</h3>
         <p className="mb-2 text-theme-secondary">
           Lights are stored in the Owlbear Rodeo room, so they survive reloads
