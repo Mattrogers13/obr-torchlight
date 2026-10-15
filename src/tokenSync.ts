@@ -278,6 +278,16 @@ const syncOnce = async () => {
   return owned.map((o) => o.light);
 };
 
+// Torchlight's slice of room metadata, to tell our changes from other
+// extensions' (room metadata is shared by every extension in the room).
+export const torchlightSignature = (metadata: Record<string, unknown>) =>
+  JSON.stringify(
+    Object.keys(metadata)
+      .filter((key) => key === ROOM_KEY || key.startsWith(PLAYER_KEY_PREFIX))
+      .sort()
+      .map((key) => [key, metadata[key]]),
+  );
+
 // Reconciles now, on every room change and scene load, and again right when
 // the next linked timer runs out, so tokens go dark on time with no panel open.
 export const startTokenSync = () => {
@@ -315,7 +325,15 @@ export const startTokenSync = () => {
   };
 
   run();
-  OBR.room.onMetadataChange(() => run());
+  // Room metadata is shared by every extension; only rerun when Torchlight's
+  // own keys changed.
+  let lastSeen = "";
+  OBR.room.onMetadataChange((metadata) => {
+    const ours = torchlightSignature(metadata);
+    if (ours === lastSeen) return;
+    lastSeen = ours;
+    run();
+  });
   OBR.scene.onReadyChange((ready) => ready && run());
   // Player changes fire on every selection; only a role change matters.
   let role: string | undefined;

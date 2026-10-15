@@ -3,7 +3,8 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("@owlbear-rodeo/sdk", () => ({ default: {}, buildImage: vi.fn() }));
 
 import { createLight, setAsideLight, pause } from "./lights";
-import { desiredSources, dfLight, parseDfLight, planSync, playerMayLight, rangePx } from "./tokenSync";
+import { desiredSources, dfLight, parseDfLight, planSync, playerMayLight, rangePx, torchlightSignature } from "./tokenSync";
+import { ROOM_KEY, playerKey } from "./components/util/constants";
 
 const T0 = Date.UTC(2026, 9, 15, 20, 0, 0);
 const DPI = 150;
@@ -168,5 +169,18 @@ describe("planSync", () => {
   it("ignores lights whose token isn't in this scene", () => {
     const plan = planSync(new Map([["elsewhere", "torch"]]), [], [], px);
     expect(plan).toEqual({ apply: [], restore: [], addBadges: [], deleteBadges: [] });
+  });
+});
+
+describe("torchlightSignature", () => {
+  it("ignores other extensions' metadata and key order", () => {
+    const ours = { [ROOM_KEY]: { rev: 1 }, [playerKey("p1")]: { rev: 2 } };
+    const a = torchlightSignature({ ...ours, "other.ext/x": 1 });
+    const b = torchlightSignature({ "other.ext/x": 99, [playerKey("p1")]: { rev: 2 }, [ROOM_KEY]: { rev: 1 } });
+    expect(a).toBe(b);
+  });
+
+  it("changes when our data changes", () => {
+    expect(torchlightSignature({ [ROOM_KEY]: { rev: 1 } })).not.toBe(torchlightSignature({ [ROOM_KEY]: { rev: 2 } }));
   });
 });
