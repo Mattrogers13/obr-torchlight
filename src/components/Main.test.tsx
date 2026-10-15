@@ -907,5 +907,30 @@ describe("Main (Torchlight)", () => {
       expect(OBR.room.getMetadata).toHaveBeenCalledTimes(1); // the initial load only
     });
   });
+
+  describe("tenth review fixes", () => {
+    it("an event about some other doc doesn't trigger a re-read", async () => {
+      room.metadata = {
+        [ROOM_KEY]: { lights: [turnTorch(0)] },
+        [playerKey("p2")]: { ownerName: "Bo", lights: [] },
+      };
+      render(<Main player={false} />);
+      const plus = await screen.findByTitle("Burn a turn");
+      room.deferWrites = true;
+      fireEvent.click(plus); // our shared-state write in flight
+      // A player's own doc changes meanwhile; the shared state in the event is
+      // the copy we already hold.
+      await act(async () => {
+        room.metadata = {
+          ...room.metadata,
+          [playerKey("p2")]: { writer: "p2w", seq: 1, ownerName: "Bo", lights: [{ ...turnTorch(0), id: "b", name: "Bo's torch" }] },
+        };
+        room.listeners.forEach((l) => l(room.metadata));
+      });
+      await flushWrite();
+      await act(async () => {});
+      expect(OBR.room.getMetadata).toHaveBeenCalledTimes(1); // initial load only
+    });
+  });
 });
 
