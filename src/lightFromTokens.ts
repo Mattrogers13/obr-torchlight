@@ -66,7 +66,8 @@ export const lightFromTokens = async (
       const light = fresh(token);
       const next = replaceTokenLight(lights, light, now);
       if (next.length > LIMITS.maxLights) continue;
-      const current = lights.find((l) => l.tokenId === token.id && isActive(l, now));
+      // The light replaceTokenLight sets aside (the newest active one).
+      const current = [...lights].reverse().find((l) => l.tokenId === token.id && isActive(l, now));
       if (current) paused.push(current.name);
       lights = next;
       lit.push(light);
