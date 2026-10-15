@@ -87,8 +87,12 @@ Route paths are defined in `src/components/util/constants.ts`.
 
 ### Component Structure
 
-- **Main.tsx**: Core GM/player interface. Reads/writes room state via `useRoomState`, sends burn-out alerts (GM only)
-- **Lights.tsx**: Add-light form, GM light rows, and the read-only player light list
+- **Main.tsx**: Wiring only: loads room state (`useRoomState`), builds the combined light list, runs the alert hooks, renders `GmPanel` or `PlayerPanel`
+- **GmPanel.tsx**: GM view and all GM actions (bulk actions, permissions, add, per-light controls)
+- **PlayerPanel.tsx**: Player view: one list (own lights first), add one at a time, remove own if allowed
+- **hooks/useGmAlerts.ts**: GM-only alerting (player lit/paused/removed notifications, burn-out detection/record/broadcast) and `useLightOutListener` (everyone)
+- **alerts.ts**: the `light-out` broadcast channel, its parser, and `broadcastLightOut`
+- **Lights.tsx**: Add-light form, GM light rows, bulk actions, Active-only filter, and the player light list
 - **SPA.tsx**: Sets up router, detects player role, syncs OBR theme to `dark` CSS class
 - **Navbar.tsx**: Tab navigation (Main / About), renders the `WhatsNew` modal, shows dev mode banner
 - **About.tsx**: Hosts `ThemeSelector`, repo link, credit line, and version display (`VERSION` from `src/version.ts`, read from manifest.json at build time; nothing fetches the manifest at runtime)
