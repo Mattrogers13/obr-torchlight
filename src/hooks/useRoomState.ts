@@ -3,6 +3,7 @@ import OBR, { Metadata } from "@owlbear-rodeo/sdk";
 
 import { PLAYER_KEY_PREFIX, ROOM_KEY, playerKey } from "../components/util/constants";
 import {
+  Light,
   PlayerDoc,
   RoomState,
   emptyPlayerDoc,
@@ -112,5 +113,33 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
     [gm, playerId, save],
   );
 
-  return { state, playerDocs, loaded, update, updatePlayer };
+  // Change lights in several docs (the shared state and any player docs) in
+  // ONE metadata write, so a GM action across players lands all-or-nothing.
+  // Keys: null = shared state, otherwise a player id.
+  const updateLights = useCallback(
+    (changes: Map<string | null, (lights: Light[]) => Light[]>) => {
+      const write: Metadata = {};
+      for (const [owner, change] of changes) {
+        if (owner === null) {
+          if (!gm) continue;
+          const next = { ...latest.current, lights: change(latest.current.lights), rev: latest.current.rev + 1 };
+          latest.current = next;
+          write[ROOM_KEY] = next;
+        } else {
+          if (!gm && owner !== playerId) continue;
+          const current = latestDocs.current[owner] ?? emptyPlayerDoc();
+          const next = { ...current, lights: change(current.lights), rev: current.rev + 1 };
+          latestDocs.current = { ...latestDocs.current, [owner]: next };
+          write[playerKey(owner)] = next;
+        }
+      }
+      if (Object.keys(write).length === 0) return;
+      if (ROOM_KEY in write) setState(latest.current);
+      setPlayerDocs(latestDocs.current);
+      save(write);
+    },
+    [gm, playerId, save],
+  );
+
+  return { state, playerDocs, loaded, update, updatePlayer, updateLights };
 };

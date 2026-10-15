@@ -51,7 +51,7 @@ type Entry = LightEntry;
 const Main: React.FC<{ player: boolean }> = ({ player }) => {
   const myId = OBR.player.id;
   const [myName, setMyName] = useState("");
-  const { state, playerDocs, loaded, update, updatePlayer } = useRoomState({
+  const { state, playerDocs, loaded, update, updatePlayer, updateLights } = useRoomState({
     gm: !player,
     playerId: myId,
   });
@@ -120,11 +120,9 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
     [],
   );
 
-  // Routes a change to whichever metadata key owns the lights.
-  const changeLights = (ownerId: string | null, change: (lights: Light[]) => Light[]) =>
-    ownerId === null
-      ? update((s) => ({ ...s, lights: change(s.lights) }))
-      : updatePlayer(ownerId, (d) => ({ ...d, lights: change(d.lights) }));
+  // Applies the same change to every listed owner's lights in one write.
+  const changeLights = (owners: Iterable<string | null>, change: (lights: Light[]) => Light[]) =>
+    updateLights(new Map([...new Set(owners)].map((owner) => [owner, change])));
 
   // GM only: detect burn-out once per light, player lights included. The
   // `alerted` flag in room state stops repeats across reloads; the ref covers
@@ -142,11 +140,9 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
 
     const ids = new Set(burnedOut.map((e) => e.light.id));
     ids.forEach((id) => alertsSent.current.add(id));
-    const owners = new Set(burnedOut.map((e) => e.ownerId));
-    owners.forEach((ownerId) =>
-      changeLights(ownerId, (lights) =>
-        lights.map((l) => (ids.has(l.id) ? { ...pause(l, Date.now()), alerted: true } : l)),
-      ),
+    changeLights(
+      burnedOut.map((e) => e.ownerId),
+      (lights) => lights.map((l) => (ids.has(l.id) ? { ...pause(l, Date.now()), alerted: true } : l)),
     );
     const names = burnedOut.map((e) => e.light.name);
     OBR.broadcast
@@ -158,16 +154,16 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
           "WARNING",
         ),
       );
-  }, [player, loaded, state.lights, playerDocs, now, update, updatePlayer]);
+  }, [player, loaded, state.lights, playerDocs, now, updateLights]);
 
   const updateLight = (entry: Entry, change: (light: Light) => Light) =>
-    changeLights(entry.ownerId, (lights) =>
+    changeLights([entry.ownerId], (lights) =>
       lights.map((l) => (l.id === entry.light.id ? change(l) : l)),
     );
 
   const removeLight = (entry: Entry) => {
     removedByMe.current.add(entry.light.id);
-    changeLights(entry.ownerId, (lights) => lights.filter((l) => l.id !== entry.light.id));
+    changeLights([entry.ownerId], (lights) => lights.filter((l) => l.id !== entry.light.id));
   };
 
   const addLight = (name: string, kind: LightKind, amount: number, source: LightSource) =>
@@ -197,12 +193,10 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
 
   const setAllRunning = (running: boolean) => {
     const t = Date.now();
-    const owners = new Set(entries.filter((e) => e.light.kind === "time").map((e) => e.ownerId));
-    owners.forEach((ownerId) =>
+    changeLights(
+      entries.filter((e) => e.light.kind === "time").map((e) => e.ownerId),
       // Resume all never relights a paused light.
-      changeLights(ownerId, (lights) =>
-        lights.map((l) => (running ? (l.setAside ? l : resume(l, t)) : pause(l, t))),
-      ),
+      (lights) => lights.map((l) => (running ? (l.setAside ? l : resume(l, t)) : pause(l, t))),
     );
   };
 
@@ -212,10 +206,9 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
     const t = Date.now();
     const hit = entries.filter((e) => ids.has(e.light.id) && isActive(e.light, t));
     if (hit.length === 0) return;
-    new Set(hit.map((e) => e.ownerId)).forEach((ownerId) =>
-      changeLights(ownerId, (lights) =>
-        lights.map((l) => (ids.has(l.id) && isActive(l, t) ? setAsideLight(l, t, "put-out") : l)),
-      ),
+    changeLights(
+      hit.map((e) => e.ownerId),
+      (lights) => lights.map((l) => (ids.has(l.id) && isActive(l, t) ? setAsideLight(l, t, "put-out") : l)),
     );
     const names = hit.map((e) => e.light.name);
     OBR.broadcast
@@ -227,7 +220,10 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
 
   const removeAll = () => {
     entries.forEach((e) => removedByMe.current.add(e.light.id));
-    new Set(entries.map((e) => e.ownerId)).forEach((ownerId) => changeLights(ownerId, () => []));
+    changeLights(
+      entries.map((e) => e.ownerId),
+      () => [],
+    );
   };
 
   if (!loaded) {
