@@ -1,7 +1,7 @@
 // Light timers and shared room state. Pure functions only: every time-based
 // calculation takes `now` (epoch ms, UTC) so it can be tested deterministically.
 
-import { PLAYER_KEY_PREFIX } from "./components/util/constants";
+import { PLAYER_KEY_PREFIX } from "./constants";
 
 export type LightKind = "time" | "turns";
 
@@ -33,6 +33,9 @@ export interface Light {
   turnsUsed: number;
   // true once the burn-out alert has been sent, so it fires exactly once
   alerted: boolean;
+  // Bumped whenever a burned-out light is re-armed (reset, time added, turn
+  // undone), so each burn-out of the same light is a distinct event.
+  rearmed: number;
   source: LightSource;
   setAside: SetAside;
   // Token this light was lit on (right-click), if any. One burning light per token.
@@ -126,14 +129,14 @@ export const createLight = (
     return {
       id, name, kind, durationSec, remainingSec: durationSec,
       endsAt: now + durationSec * 1000,
-      maxTurns: DEFAULT_TURNS, turnsUsed: 0, alerted: false, source, setAside: null, tokenId,
+      maxTurns: DEFAULT_TURNS, turnsUsed: 0, alerted: false, rearmed: 0, source, setAside: null, tokenId,
     };
   }
   return {
     id, name, kind,
     durationSec: 0, remainingSec: 0, endsAt: null,
     maxTurns: clampInt(amount, LIMITS.minTurns, LIMITS.maxTurns),
-    turnsUsed: 0, alerted: false, source, setAside: null, tokenId,
+    turnsUsed: 0, alerted: false, rearmed: 0, source, setAside: null, tokenId,
   };
 };
 
@@ -172,11 +175,10 @@ export const reset = (light: Light): Light => ({
   endsAt: null,
   turnsUsed: 0,
   alerted: false,
+  rearmed: light.rearmed + 1,
   setAside: null,
 });
 
-// GM correction: add or take away time. Keeps running or paused as it was.
-// Adding past full stretches the duration (remainingSec is capped at it).
 export const setAsideLight = (light: Light, now: number, why: Exclude<SetAside, null> = "swap"): Light => ({
   ...pause(light, now),
   setAside: why,
@@ -200,35 +202,59 @@ export const replaceTokenLight = (lights: Light[], fresh: Light, now: number): L
   return [...others, ...replacePlayerLight(onToken, fresh, now)];
 };
 
+// GM correction: add or take away time. Keeps counting down or paused as
+// it was; a burned-out light counts as paused, so adding time doesn't relight
+// it. Adding past full stretches the duration (remainingSec is capped at it).
 export const adjustTime = (light: Light, deltaSec: number, now: number): Light => {
   if (light.kind !== "time") return light;
+  const wasOut = isOut(light, now);
   const left = clampInt(remainingSec(light, now) + deltaSec, 0, LIMITS.maxMinutes * 60);
+  const rearm = wasOut && left > 0;
   return {
     ...light,
     durationSec: Math.max(light.durationSec, left),
     remainingSec: left,
-    endsAt: isRunning(light) ? now + left * 1000 : null,
+    endsAt: isRunning(light) && !wasOut ? now + left * 1000 : null,
     // Adding time to a burned-out light re-arms the alert.
     alerted: left > 0 ? false : light.alerted,
+    rearmed: rearm ? light.rearmed + 1 : light.rearmed,
   };
 };
 
 export const adjustTurns =(light: Light, delta: number): Light => {
   if (light.kind !== "turns") return light;
   const turnsUsed = clampInt(light.turnsUsed + delta, 0, light.maxTurns);
+  if (turnsUsed === light.turnsUsed) return light;
   // Stepping back from burned out re-arms the alert.
-  return { ...light, turnsUsed, alerted: turnsUsed < light.maxTurns ? false : light.alerted };
+  const rearm = light.turnsUsed >= light.maxTurns && turnsUsed < light.maxTurns;
+  return {
+    ...light,
+    turnsUsed,
+    alerted: turnsUsed < light.maxTurns ? false : light.alerted,
+    rearmed: rearm ? light.rearmed + 1 : light.rearmed,
+  };
 };
 
-// Identifies one particular burn-out of a light. A time light that is
-// relit or given more time gets a new endsAt, so its next burn-out is a new
-// key and alerts again.
-export const burnKey = (light: Light) =>
-  light.kind === "time" ? `${light.id}@${light.endsAt ?? "p"}` : `${light.id}#${light.turnsUsed}`;
+// Identifies one particular burn-out of a light: its id plus how many times
+// it has been re-armed. Pausing, swapping or editing a burned-out light
+// doesn't change the key; re-arming it does, so its next burn-out alerts.
+export const burnKey = (light: Light) => `${light.id}#${light.rearmed}`;
 
 // Keep only keys for lights that still exist, newest last, capped.
 export const pruneBurnedOut = (keys: string[], liveIds: Set<string>) =>
-  [...new Set(keys)].filter((k) => liveIds.has(k.split(/[@#]/)[0])).slice(-LIMITS.maxBurnedOut);
+  [...new Set(keys)].filter((k) => liveIds.has(k.split("#")[0])).slice(-LIMITS.maxBurnedOut);
+
+// Like lights.map, but returns the original array when nothing changed, so
+// callers' "same object means no write" checks work.
+export const mapLights = (lights: Light[], change: (light: Light) => Light): Light[] => {
+  let changed = false;
+  const next = lights.map((l) => {
+    const n = change(l);
+    if (n !== l) changed = true;
+    return n;
+  });
+  return changed ? next : lights;
+};
 
 export const formatClock = (seconds: number) => {
   const h = Math.floor(seconds / 3600);
@@ -247,6 +273,8 @@ const isObject = (v: unknown): v is Record<string, unknown> =>
 
 const finite = (v: unknown): v is number =>
   typeof v === "number" && Number.isFinite(v);
+
+const parseCount = (v: unknown) => (finite(v) && v >= 0 ? Math.min(Math.floor(v), 1e6) : 0);
 
 const parseSource = (v: unknown): LightSource =>
   typeof v === "string" && (SOURCE_IDS as string[]).includes(v) ? (v as LightSource) : "torch";
@@ -277,6 +305,7 @@ export const parseLight = (raw: unknown): Light | null => {
       endsAt: raw.endsAt === null ? null : raw.endsAt,
       maxTurns: DEFAULT_TURNS, turnsUsed: 0,
       alerted: raw.alerted === true,
+      rearmed: parseCount(raw.rearmed),
       source: parseSource(raw.source),
       setAside: parseSetAside(raw.setAside),
       tokenId: parseTokenId(raw.tokenId),
@@ -290,6 +319,7 @@ export const parseLight = (raw: unknown): Light | null => {
     durationSec: 0, remainingSec: 0, endsAt: null,
     maxTurns, turnsUsed: clampInt(raw.turnsUsed, 0, maxTurns),
     alerted: raw.alerted === true,
+    rearmed: parseCount(raw.rearmed),
     source: parseSource(raw.source),
     setAside: parseSetAside(raw.setAside),
     tokenId: parseTokenId(raw.tokenId),

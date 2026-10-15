@@ -41,7 +41,7 @@ vi.mock("@owlbear-rodeo/sdk", () => ({
 }));
 
 import OBR from "@owlbear-rodeo/sdk";
-import { ROOM_KEY, playerKey } from "./components/util/constants";
+import { ROOM_KEY, playerKey } from "./constants";
 import { createLight } from "./lights";
 import { DF_LIGHT_KEY, TOKEN_KEY, syncOnce } from "./tokenSync";
 

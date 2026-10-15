@@ -14,6 +14,7 @@ import {
   createLight,
   isActive,
   isRunning,
+  mapLights,
   nextDefaultName,
   pause,
   reset,
@@ -39,7 +40,8 @@ const GmPanel: React.FC<{
   update: (change: (s: RoomState) => RoomState) => Promise<boolean>;
   updateLights: (changes: Map<string | null, (lights: Light[]) => Light[]>) => Promise<boolean>;
   removedByMe: MutableRefObject<Set<string>>;
-}> = ({ state, entries, now, update, updateLights, removedByMe }) => {
+  restoredAfterFailure: MutableRefObject<Set<string>>;
+}> = ({ state, entries, now, update, updateLights, removedByMe, restoredAfterFailure }) => {
   const [activeOnly, toggleActiveOnly] = useActiveOnly();
 
   // Applies the same change to every listed owner's lights in one write.
@@ -47,7 +49,7 @@ const GmPanel: React.FC<{
     updateLights(new Map([...new Set(owners)].map((owner) => [owner, change])));
 
   const updateLight = (entry: LightEntry, change: (light: Light) => Light) =>
-    changeLights([entry.ownerId], (lights) => lights.map((l) => (l.id === entry.light.id ? change(l) : l)));
+    changeLights([entry.ownerId], (lights) => mapLights(lights, (l) => (l.id === entry.light.id ? change(l) : l)));
 
   // Only players' lights are diffed for "removed" alerts, so only those need
   // remembering, and only until the write lands or fails.
@@ -58,7 +60,8 @@ const GmPanel: React.FC<{
       removed.map((e) => e.ownerId),
       change,
     ).then((saved) => {
-      if (!saved) ids.forEach((id) => removedByMe.current.delete(id));
+      // The resync brings these back; that isn't the player lighting them.
+      if (!saved) ids.forEach((id) => restoredAfterFailure.current.add(id));
     });
   };
 
@@ -87,7 +90,7 @@ const GmPanel: React.FC<{
     changeLights(
       entries.filter((e) => e.light.kind === "time").map((e) => e.ownerId),
       // Resume all never relights a paused or put-out light.
-      (lights) => lights.map((l) => (running ? (l.setAside ? l : resume(l, t)) : pause(l, t))),
+      (lights) => mapLights(lights, (l) => (running ? (l.setAside ? l : resume(l, t)) : pause(l, t))),
     );
   };
 
@@ -99,7 +102,7 @@ const GmPanel: React.FC<{
     if (hit.length === 0) return;
     changeLights(
       hit.map((e) => e.ownerId),
-      (lights) => lights.map((l) => (ids.has(l.id) && isActive(l, t) ? setAsideLight(l, t, "put-out") : l)),
+      (lights) => mapLights(lights, (l) => (ids.has(l.id) && isActive(l, t) ? setAsideLight(l, t, "put-out") : l)),
     );
     broadcastLightOut(hit.map((e) => e.light.name));
   };

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import OBR from "@owlbear-rodeo/sdk";
 
-import { ROOM_KEY, playerKey } from "./components/util/constants";
+import { ROOM_KEY, playerKey } from "./constants";
 import { lightFromTokens } from "./lightFromTokens";
 import { lightName } from "./lights";
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import OBR, { Metadata } from "@owlbear-rodeo/sdk";
 
-import { PLAYER_KEY_PREFIX, ROOM_KEY } from "./util/constants";
+import { PLAYER_KEY_PREFIX, ROOM_KEY } from "../constants";
 import { parsePlayerDoc, parseRoomState } from "../lights";
 
 // Dev builds only (About tab): what this client is and what the room holds,

@@ -2,8 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, renderHook, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import OBR from "@owlbear-rodeo/sdk";
 
-import Main, { BURN_OUT_RETRY_MS, LIGHT_OUT_CHANNEL } from "./Main";
-import { ROOM_KEY, playerKey, useRoomState } from "../hooks/useRoomState";
+import Main from "./Main";
+import { LIGHT_OUT_CHANNEL } from "../alerts";
+import { BURN_OUT_RETRY_MS } from "../hooks/useGmAlerts";
+import { ROOM_KEY, playerKey } from "../constants";
+import { useRoomState } from "../hooks/useRoomState";
 import type { Light } from "../lights";
 
 // In-memory stand-in for OBR room metadata and broadcasts.
@@ -356,7 +359,7 @@ describe("Main (Torchlight)", () => {
       render(<Main player={false} />);
       // Recorded in the GM's own doc; the player's doc is never written.
       await waitFor(() => expect(stored()?.burnedOut).toHaveLength(1));
-      expect(stored().burnedOut).toEqual([`t1@${(room.metadata[playerKey("p2")] as { lights: { endsAt: number }[] }).lights[0].endsAt}`]);
+      expect(stored().burnedOut).toEqual(["t1#0"]);
       expect(room.metadata[playerKey("p2")]).toMatchObject({ rev: 1, lights: [{ alerted: false }] });
       expect(OBR.broadcast.sendMessage).toHaveBeenCalledTimes(1);
     });
@@ -650,6 +653,61 @@ describe("Main (Torchlight)", () => {
         await result.current.update((s) => s);
         await result.current.updateLights(new Map([[null, (lights) => lights]]));
       });
+      expect(OBR.room.setMetadata).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("third review fixes", () => {
+    it("still alerts when a re-render lands in the last second before burn-out", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        room.metadata = { [ROOM_KEY]: { rev: 1, lights: [{ ...burnedOutTorch(false), endsAt: Date.now() + 1500 }] } };
+        render(<Main player={false} />);
+        await screen.findByText("Kira's torch");
+        // Ticks land at 1 s and 2 s; the light ends at 1.5 s. Re-render at
+        // 1.7 s: past zero on the wall clock, before the next tick.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1700);
+        });
+        // Any re-render (another client's change, here).
+        await act(async () => {
+          room.metadata = { ...room.metadata, "other.extension/x": 1 };
+          room.listeners.forEach((l) => l(room.metadata));
+        });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(2500);
+        });
+        expect(OBR.broadcast.sendMessage).toHaveBeenCalledWith(LIGHT_OUT_CHANNEL, ["Kira's torch"], {
+          destination: "ALL",
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("a failed removal of a player's light doesn't read as the player lighting it", async () => {
+      room.metadata = {
+        [playerKey("p2")]: {
+          rev: 1, ownerName: "Bo",
+          lights: [{ ...burnedOutTorch(false), id: "b", name: "Bo's torch", endsAt: Date.now() + 600_000 }],
+        },
+      };
+      room.failWrites = true;
+      render(<Main player={false} />);
+      fireEvent.click(await screen.findByLabelText("Remove Bo's torch"));
+      await waitFor(() =>
+        expect(OBR.notification.show).toHaveBeenCalledWith("Torchlight couldn't save: Metadata too large", "ERROR"),
+      );
+      expect(await screen.findByText("Bo's torch")).toBeInTheDocument();
+      expect(OBR.notification.show).not.toHaveBeenCalledWith("Bo lit Bo's torch", "INFO");
+    });
+
+    it("Pause all with everything already paused writes nothing", async () => {
+      const paused = { ...burnedOutTorch(false), endsAt: null, remainingSec: 30 };
+      room.metadata = { [ROOM_KEY]: { lights: [paused] } };
+      render(<Main player={false} />);
+      // Only Resume all is offered; Pause all would be a no-op anyway.
+      expect(await screen.findByText("Resume all")).toBeInTheDocument();
       expect(OBR.room.setMetadata).not.toHaveBeenCalled();
     });
   });

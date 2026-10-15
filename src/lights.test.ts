@@ -15,6 +15,7 @@ import {
   replacePlayerLight,
   SOURCES,
   burnKey,
+  mapLights,
   pruneBurnedOut,
   setAsideLight,
   remainingSec,
@@ -178,7 +179,7 @@ describe("parseRoomState (untrusted metadata)", () => {
   });
 
   it("round-trips valid state", () => {
-    const state = { rev: 7, lights: [valid], showToPlayers: true, playersCanAdd: true, playersCanRemove: false, burnedOut: ["x@1"] };
+    const state = { rev: 7, lights: [valid], showToPlayers: true, playersCanAdd: true, playersCanRemove: false, burnedOut: ["x#1"] };
     expect(parseRoomState(JSON.parse(JSON.stringify(state)))).toEqual(state);
   });
 
@@ -323,20 +324,45 @@ describe("light sources (core rules)", () => {
 });
 
 describe("burn-out record", () => {
-  it("keys a time light by its end time, so a relit light alerts again", () => {
+  it("re-arming a light gives its next burn-out a new key; pausing or swapping doesn't", () => {
     const lit = createLight("a", "T", "time", 1, T0);
-    const relit = resume(pause(lit, T0 + 1000), T0 + 5000);
-    expect(burnKey(lit)).not.toBe(burnKey(relit));
+    const out = T0 + 61_000;
+    const key = burnKey(lit);
+    expect(burnKey(pause(lit, out))).toBe(key);
+    expect(burnKey(setAsideLight(lit, out, "swap"))).toBe(key);
+    expect(burnKey(reset(lit))).not.toBe(key);
+    expect(burnKey(adjustTime(lit, 60, out))).not.toBe(key);
+  });
+
+  it("a turn light burning out again after a reset or undo is a new burn-out", () => {
+    const burned = adjustTurns(createLight("t", "T", "turns", 2, T0), 2);
+    const again = adjustTurns(reset(burned), 2);
+    expect(burnKey(again)).not.toBe(burnKey(burned));
+    const undone = adjustTurns(adjustTurns(burned, -1), 1);
+    expect(burnKey(undone)).not.toBe(burnKey(burned));
+  });
+
+  it("adding time to a burned-out light leaves it paused (doesn't relight it)", () => {
+    const lit = createLight("a", "T", "time", 1, T0);
+    const more = adjustTime(lit, 600, T0 + 61_000);
+    expect(isRunning(more)).toBe(false);
+    expect(remainingSec(more, T0 + 9e9)).toBe(600);
   });
 
   it("prunes keys for lights that no longer exist and caps the list", () => {
-    expect(pruneBurnedOut(["a@1", "gone@2", "a@1", "b#3"], new Set(["a", "b"]))).toEqual(["a@1", "b#3"]);
-    const many = Array.from({ length: 150 }, (_, i) => `a@${i}`);
+    expect(pruneBurnedOut(["a#0", "gone#0", "a#0", "b#3"], new Set(["a", "b"]))).toEqual(["a#0", "b#3"]);
+    const many = Array.from({ length: 150 }, (_, i) => `a#${i}`);
     expect(pruneBurnedOut(many, new Set(["a"]))).toHaveLength(LIMITS.maxBurnedOut);
   });
 
   it("parses only short strings", () => {
-    expect(parseRoomState({ burnedOut: ["ok@1", 5, "x".repeat(200)] }).burnedOut).toEqual(["ok@1"]);
+    expect(parseRoomState({ burnedOut: ["ok#1", 5, "x".repeat(200)] }).burnedOut).toEqual(["ok#1"]);
+  });
+
+  it("mapLights returns the same array when nothing changed", () => {
+    const lights = [createLight("a", "T", "time", 1, T0)];
+    expect(mapLights(lights, (l) => l)).toBe(lights);
+    expect(mapLights(lights, (l) => ({ ...l, name: "x" }))).not.toBe(lights);
   });
 });
 
