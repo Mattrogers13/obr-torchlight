@@ -173,13 +173,13 @@ describe("parseRoomState (untrusted metadata)", () => {
   it("returns empty state for missing or non-object data", () => {
     for (const raw of [undefined, null, 42, "x", [], true]) {
       expect(parseRoomState(raw)).toEqual({
-        rev: 0, writer: "", seq: 0, lights: [], showToPlayers: false, playersCanAdd: false, playersCanRemove: false, burnedOut: [],
+        writer: "", seq: 0, lights: [], showToPlayers: false, playersCanAdd: false, playersCanRemove: false, burnedOut: [],
       });
     }
   });
 
   it("round-trips valid state", () => {
-    const state = { rev: 7, writer: "ab12", seq: 3, lights: [valid], showToPlayers: true, playersCanAdd: true, playersCanRemove: false, burnedOut: ["x#1"] };
+    const state = { writer: "ab12", seq: 3, lights: [valid], showToPlayers: true, playersCanAdd: true, playersCanRemove: false, burnedOut: ["x#1"] };
     expect(parseRoomState(JSON.parse(JSON.stringify(state)))).toEqual(state);
   });
 
@@ -235,16 +235,16 @@ describe("parsePlayerDoc (untrusted metadata)", () => {
 
   it("returns an empty doc for junk", () => {
     for (const raw of [undefined, null, 42, "x", []]) {
-      expect(parsePlayerDoc(raw)).toEqual({ rev: 0, writer: "", seq: 0, ownerName: "", lights: [] });
+      expect(parsePlayerDoc(raw)).toEqual({ writer: "", seq: 0, ownerName: "", lights: [] });
     }
   });
 
   it("caps player lights and cleans the owner name", () => {
     const lights = ["a", "b", "c", "d", "e"].map((id) => ({ ...valid, id }));
-    const doc = parsePlayerDoc({ rev: 2, ownerName: "  " + "x".repeat(99), lights });
+    const doc = parsePlayerDoc({ seq: 2, ownerName: "  " + "x".repeat(99), lights });
     expect(doc.lights.map((l) => l.id)).toEqual(["a", "b"]);
     expect(doc.ownerName).toHaveLength(LIMITS.maxNameLength);
-    expect(doc.rev).toBe(2);
+    expect(doc.seq).toBe(2);
   });
 
   it("ignores a non-string owner name", () => {

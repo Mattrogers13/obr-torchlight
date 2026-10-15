@@ -100,12 +100,19 @@ const GmPanel: React.FC<{
     const t = Date.now();
     const hit = entries.filter((e) => ids.has(e.light.id) && isActive(e.light, t));
     if (hit.length === 0) return;
+    // Only lights this write actually puts out (someone may have beaten us).
+    const putOutNow: string[] = [];
     changeLights(
       hit.map((e) => e.ownerId),
-      (lights) => mapLights(lights, (l) => (ids.has(l.id) && isActive(l, t) ? setAsideLight(l, t, "put-out") : l)),
+      (lights) =>
+        mapLights(lights, (l) => {
+          if (!ids.has(l.id) || !isActive(l, t)) return l;
+          putOutNow.push(l.name);
+          return setAsideLight(l, t, "put-out");
+        }),
     ).then((saved) => {
       // Only tell the room once the lights really are out.
-      if (saved) broadcastLightOut(hit.map((e) => e.light.name));
+      if (saved) broadcastLightOut(putOutNow);
     });
   };
 

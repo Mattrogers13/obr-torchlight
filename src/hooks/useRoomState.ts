@@ -24,6 +24,10 @@ const WRITER = crypto.randomUUID().slice(0, 8);
 let lastSeq = 0;
 const ourLatest = new Map<string, number>(); // doc key -> seq of our latest write
 const ourSettled = new Map<string, number>(); // doc key -> highest seq of ours that landed or failed
+const ourLanded = new Map<string, number>(); // doc key -> highest seq of ours that landed
+// Docs where rule 1 held off another writer's doc; they need a re-read
+// once our write settles. Nothing else does.
+const heldOff = new Set<string>();
 
 const nextStamp = (key: string): Stamp => {
   lastSeq += 1;
@@ -31,23 +35,33 @@ const nextStamp = (key: string): Stamp => {
   return { writer: WRITER, seq: lastSeq };
 };
 const settle = (key: string, seq: number) => ourSettled.set(key, Math.max(ourSettled.get(key) ?? 0, seq));
+const land = (key: string, seq: number) => {
+  settle(key, seq);
+  ourLanded.set(key, Math.max(ourLanded.get(key) ?? 0, seq));
+};
 // One of our writes to this doc hasn't landed (or failed) yet.
 const inFlight = (key: string) => (ourSettled.get(key) ?? 0) < (ourLatest.get(key) ?? 0);
 
 // Two rules keep the panel in step with the room (details: docs/state-sync.md):
 //
-// 1. Live change events: ignore late echoes of our own older writes, and
-//    hold off another writer's doc while one of ours to it is in flight (ours
-//    lands after it and replaces it).
-// 2. After each of our writes settles, saved or failed, read the room and
-//    take that snapshot as truth for every doc we have nothing in flight on.
-//    That reverts a failed write and picks up anything rule 1 held off.
+// 1. Live change events: an echo of our own write is taken unless a newer
+//    write of ours has landed or is still in flight (a failed newer write
+//    doesn't count, so the room's copy reverts it). Another writer's doc is
+//    held off while one of ours to it is in flight: ours lands after it and
+//    replaces it.
+// 2. If rule 1 held anything off for a doc, read the room once our write to
+//    it settles, and take that snapshot for every doc with nothing in flight.
 const takeEvent = (key: string, doc: Stamp) => {
   if (doc.writer === WRITER) {
-    settle(key, doc.seq);
-    return doc.seq >= (ourLatest.get(key) ?? 0);
+    const newerLanded = (ourLanded.get(key) ?? 0) > doc.seq;
+    land(key, doc.seq);
+    return !newerLanded && !inFlight(key);
   }
-  return !inFlight(key);
+  if (inFlight(key)) {
+    heldOff.add(key);
+    return false;
+  }
+  return true;
 };
 
 // Who this client is. GMs may write the shared state and every player's doc;
@@ -114,6 +128,9 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
         const metadata = await OBR.room.getMetadata();
         if (changes.current === asked) return apply(metadata, "snapshot");
       }
+      // A busy room kept changing under us. Events are applying meanwhile,
+      // so this is a best-effort re-read; try again shortly.
+      setTimeout(() => resync(), 2000);
     } catch (err) {
       notify(`Torchlight couldn't load room state: ${errorMessage(err)}`, "ERROR");
     }
@@ -124,8 +141,9 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
     return OBR.room.onMetadataChange((metadata) => apply(metadata, "event"));
   }, [apply, resync]);
 
-  // Resolves true once the write landed, false if it failed (the user is told).
-  // Either way the write is settled and the room is re-read (rule 2).
+  // Resolves true once the write landed, false if it failed (the user is
+  // told). A failed write is reverted by rule 1 on the next event and by a
+  // re-read now; a landed one only needs a re-read if rule 1 held anything off.
   const save = useCallback(
     (update: Metadata): Promise<boolean> =>
       OBR.room
@@ -139,8 +157,14 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
           },
         )
         .then((saved) => {
-          for (const [key, doc] of Object.entries(update)) settle(key, (doc as Stamp).seq);
-          resync();
+          let reread = !saved;
+          for (const [key, doc] of Object.entries(update)) {
+            const seq = (doc as Stamp).seq;
+            if (saved) land(key, seq);
+            else settle(key, seq);
+            if (heldOff.delete(key)) reread = true;
+          }
+          if (reread) resync();
           return saved;
         }),
     [resync],
@@ -152,7 +176,7 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
       if (!gm) return Promise.resolve(false);
       const changed = change(latest.current);
       if (changed === latest.current) return Promise.resolve(true);
-      const next = restamp({ ...changed, rev: latest.current.rev }, nextStamp(ROOM_KEY));
+      const next = restamp(changed, nextStamp(ROOM_KEY));
       latest.current = next;
       setState(next);
       return save({ [ROOM_KEY]: next });
@@ -166,7 +190,7 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
       const current = latestDocs.current[id] ?? emptyPlayerDoc();
       const changed = change(current);
       if (changed === current) return Promise.resolve(true);
-      const next = restamp({ ...changed, rev: current.rev }, nextStamp(playerKey(id)));
+      const next = restamp(changed, nextStamp(playerKey(id)));
       latestDocs.current = { ...latestDocs.current, [id]: next };
       setPlayerDocs(latestDocs.current);
       return save({ [playerKey(id)]: next });

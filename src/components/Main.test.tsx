@@ -366,7 +366,7 @@ describe("Main (Torchlight)", () => {
       expect(await screen.findByText("(Bo)")).toBeInTheDocument();
       fireEvent.click(screen.getByTitle("Burn a turn"));
       await waitFor(() =>
-        expect(room.metadata[playerKey("p2")]).toMatchObject({ rev: 4, lights: [{ turnsUsed: 1 }] }),
+        expect(room.metadata[playerKey("p2")]).toMatchObject({ lights: [{ turnsUsed: 1 }] }),
       );
       fireEvent.click(screen.getByLabelText("Remove Lantern"));
       await waitFor(() => expect(room.metadata[playerKey("p2")]).toMatchObject({ lights: [] }));
@@ -894,6 +894,17 @@ describe("Main (Torchlight)", () => {
       fireEvent.click(screen.getByTitle("Reset")); // re-armed before it lands
       while (room.writeQueue.length) await flushWrite();
       expect(OBR.broadcast.sendMessage).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("ninth review fixes", () => {
+    it("a normal save doesn't re-read the room", async () => {
+      room.metadata = { [ROOM_KEY]: { lights: [turnTorch(0)] } };
+      render(<Main player={false} />);
+      fireEvent.click(await screen.findByTitle("Burn a turn"));
+      await waitFor(() => expect(stored().lights[0]).toMatchObject({ turnsUsed: 1 }));
+      await act(async () => {});
+      expect(OBR.room.getMetadata).toHaveBeenCalledTimes(1); // the initial load only
     });
   });
 });

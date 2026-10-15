@@ -104,6 +104,12 @@ export const useGmAlerts = ({
     const recorded = new Set(state.burnedOut);
     const announced = (e: LightEntry) =>
       e.light.alerted || (e.ownerId !== null && recorded.has(burnKey(e.light)));
+    // Forget lights that are gone (removed while burned out).
+    const live = new Set(entries.map((e) => e.light.id));
+    for (const set of [broadcast.current, pendingAnnounce.current]) {
+      set.forEach((id) => live.has(id) || set.delete(id));
+    }
+    recording.current.forEach((_t, id) => live.has(id) || recording.current.delete(id));
     for (const e of entries) {
       if (!isOut(e.light, now)) {
         recording.current.delete(e.light.id);

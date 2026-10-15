@@ -112,7 +112,7 @@ Timer logic is pure functions in `src/lights.ts` (every time calc takes `now`, e
 
 - Everything read from room metadata goes through `parseRoomState` / `parsePlayerDocs`: any client or extension can write it.
 - Permissions are client-side only; a tampering client can write any key.
-- Staleness is by `writer`/`seq` stamps, never `rev`. Anything that copies a doc before writing it must restamp it.
+- Staleness is by `writer`/`seq` stamps. Prepare every write with `restamp` (a copied doc that keeps another client's stamp is discarded as that client's echo).
 - Multi-player GM actions are one `updateLights` write. Edit with `mapLights`, not `.map`.
 - The GM never writes a player's doc just to mark a burn-out (`burnedOut` lives in shared state).
 - Room metadata is capped at 16 kB across all extensions.
