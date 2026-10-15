@@ -43,7 +43,8 @@ export default function SPA() {
     const loadRole = () =>
       OBR.player
         .getRole()
-        .then((r) => alive && setRole(r))
+        // A role from player.onChange is newer than this lookup's answer.
+        .then((r) => alive && !gotRole && setRole(r))
         .catch((err) => {
           // player.onChange may have delivered the role meanwhile.
           if (!alive || gotRole) return;
