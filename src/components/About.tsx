@@ -1,6 +1,8 @@
 import React from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faGithub } from "@fortawesome/free-brands-svg-icons";
+import OBR from "@owlbear-rodeo/sdk";
+import DebugInfo from "./DebugInfo";
 import ThemeSelector from "./ThemeSelector";
 import { ThemeId } from "../themes";
 
@@ -59,6 +61,8 @@ const About: React.FC<{
             </span>
           </div>
         )}
+        {/* Dev builds inside Owlbear only (the homepage also renders About). */}
+        {import.meta.env.VITE_BUILD_LABEL && OBR.isAvailable && OBR.isReady && <DebugInfo />}
       </div>
     </div>
   );
