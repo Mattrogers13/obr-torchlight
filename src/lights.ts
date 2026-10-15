@@ -44,15 +44,13 @@ export interface Light {
 
 // Every doc records who wrote it last (a random id per page load, or
 // "menu-…" for the right-click menu) and that writer's sequence number. See
-// takeIncoming in useRoomState for how clients use it.
+// takeEvent in useRoomState for how clients use it.
 export interface Stamp {
   writer: string;
   seq: number;
 }
 
 export interface RoomState extends Stamp {
-  // Bumped on every write; informational (staleness uses writer + seq).
-  rev: number;
   lights: Light[];
   showToPlayers: boolean;
   // GM permission toggles for player-owned lights (see PlayerDoc).
@@ -68,7 +66,6 @@ export interface RoomState extends Stamp {
 // a player lighting a torch can't clobber a GM edit (or another player's)
 // the way concurrent writes to the single shared key would.
 export interface PlayerDoc extends Stamp {
-  rev: number;
   ownerName: string;
   lights: Light[];
 }
@@ -90,7 +87,6 @@ export const DEFAULT_MINUTES = 60;
 export const DEFAULT_TURNS = 10;
 
 export const emptyRoomState = (): RoomState => ({
-  rev: 0,
   writer: "",
   seq: 0,
   lights: [],
@@ -100,7 +96,7 @@ export const emptyRoomState = (): RoomState => ({
   burnedOut: [],
 });
 
-export const emptyPlayerDoc = (): PlayerDoc => ({ rev: 0, writer: "", seq: 0, ownerName: "", lights: [] });
+export const emptyPlayerDoc = (): PlayerDoc => ({ writer: "", seq: 0, ownerName: "", lights: [] });
 
 const clampInt = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, Math.round(value)));
@@ -196,8 +192,11 @@ export const setAsideLight = (light: Light, now: number, why: Exclude<SetAside, 
 
 // A player lights something new: their current light is paused and kept
 // alongside the new one; anything older is dropped.
+// The light a new one replaces: the newest active one.
+export const currentLight = (lights: Light[], now: number) => [...lights].reverse().find((l) => isActive(l, now));
+
 export const replacePlayerLight = (lights: Light[], fresh: Light, now: number): Light[] => {
-  const current = [...lights].reverse().find((l) => isActive(l, now));
+  const current = currentLight(lights, now);
   const keep = current ? setAsideLight(current, now) : lights[lights.length - 1];
   return keep ? [keep, fresh] : [fresh];
 };
@@ -351,23 +350,19 @@ const parseLights = (raw: unknown, max: number): Light[] => {
   return lights;
 };
 
-const parseRev = (raw: Record<string, unknown>) =>
-  finite(raw.rev) && raw.rev >= 0 ? Math.floor(raw.rev) : 0;
-
 const parseStamp = (raw: Record<string, unknown>, into: Stamp) => {
   if (typeof raw.writer === "string" && raw.writer.length <= 40) into.writer = raw.writer;
   if (finite(raw.seq) && raw.seq >= 0) into.seq = Math.floor(raw.seq);
 };
 
-// The only way a doc should be prepared for writing: bump rev and put this
-// writer's stamp on it. A copied doc that isn't restamped carries another
-// client's stamp, and that client would discard the write as its own echo.
-export const restamp = <D extends Stamp & { rev: number }>(doc: D, stamp: Stamp): D => ({
-  ...doc,
-  rev: doc.rev + 1,
-  writer: stamp.writer,
-  seq: stamp.seq,
-});
+// The only way a doc should be prepared for writing: put this writer's stamp
+// on it. A copied doc that isn't restamped carries another client's stamp,
+// and that client would discard the write as its own echo. (Docs once had a
+// `rev` counter too; old ones still in rooms are ignored.)
+export const restamp = <D extends Stamp>(doc: D, stamp: Stamp): D => {
+  const { rev: _unused, ...rest } = doc as D & { rev?: unknown };
+  return { ...(rest as D), writer: stamp.writer, seq: stamp.seq };
+};
 
 // Torchlight's slice of room metadata, to tell our changes from other
 // extensions' (room metadata is shared by every extension in the room).
@@ -388,7 +383,6 @@ export const parseRoomState = (raw: unknown): RoomState => {
   if (!isObject(raw)) return state;
 
   state.lights = parseLights(raw.lights, LIMITS.maxLights);
-  state.rev = parseRev(raw);
   parseStamp(raw, state);
   if (typeof raw.showToPlayers === "boolean") state.showToPlayers = raw.showToPlayers;
   state.playersCanAdd = parsePlayersCanAdd(raw);
@@ -404,7 +398,6 @@ export const parseRoomState = (raw: unknown): RoomState => {
 export const parsePlayerDoc = (raw: unknown): PlayerDoc => {
   const doc = emptyPlayerDoc();
   if (!isObject(raw)) return doc;
-  doc.rev = parseRev(raw);
   parseStamp(raw, doc);
   doc.lights = parseLights(raw.lights, LIMITS.maxPlayerLights);
   if (typeof raw.ownerName === "string") doc.ownerName = cleanName(raw.ownerName, "");
