@@ -6,6 +6,14 @@ export interface ReleaseHighlight {
 
 export const releaseHighlights: ReleaseHighlight[] = [
   {
+    version: "2026-10-15.6",
+    date: "October 15, 2026",
+    highlights: [
+      "☑️ Active lights only: a checkbox that hides paused, put-out and burned-out lights",
+      "⏯️ Pause all / Resume all is now one button",
+    ]
+  },
+  {
     version: "2026-10-15.5",
     date: "October 15, 2026",
     highlights: [

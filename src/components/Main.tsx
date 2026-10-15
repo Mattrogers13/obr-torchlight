@@ -6,6 +6,7 @@ import { ID } from "./util/constants";
 import { errorMessage, notify } from "../utils";
 import { useRoomState } from "../hooks/useRoomState";
 import { useNow } from "../hooks/useNow";
+import { useActiveOnly } from "../hooks/useActiveOnly";
 import {
   LIMITS,
   Light,
@@ -63,6 +64,13 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
   const anyRunning = entries.some((e) => isRunning(e.light));
   const now = useNow(anyRunning);
   const alertsSent = useRef(new Set<string>());
+  const [activeOnly, toggleActiveOnly] = useActiveOnly();
+  const activeFilter = (
+    <label className="flex items-center gap-2 mb-3 text-sm text-theme-secondary">
+      <input type="checkbox" checked={activeOnly} onChange={toggleActiveOnly} />
+      Active lights only
+    </label>
+  );
 
   // GM only: tell the GM about everything players do (light, pause or
   // remove a light), by diffing the room's lights against the last render.
@@ -254,7 +262,8 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
 
     // One list: the player's own lights first, then everyone else's when the
     // GM shares them. Only their own can show a remove button.
-    const visible = state.showToPlayers ? [...mine, ...others] : mine;
+    const shared = state.showToPlayers ? [...mine, ...others] : mine;
+    const visible = activeOnly ? shared.filter((l) => isActive(l, now)) : shared;
 
     return (
       <div className="p-4">
@@ -271,6 +280,7 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
               )}
             </>
           )}
+          {shared.length > 0 && activeFilter}
           <PlayerLightList
             lights={visible}
             now={now}
@@ -287,6 +297,7 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
     .filter((l) => l.kind === "time" && isActive(l, now));
   const canPauseAll = timeLights.some(isRunning);
   const canResumeAll = timeLights.some((l) => !isRunning(l));
+  const listed = activeOnly ? entries.filter((e) => isActive(e.light, now)) : entries;
 
   return (
     <div className="p-4">
@@ -309,8 +320,7 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
         now={now}
         canPauseAll={canPauseAll}
         canResumeAll={canResumeAll}
-        onPauseAll={() => setAllRunning(false)}
-        onResumeAll={() => setAllRunning(true)}
+        onSetAllRunning={setAllRunning}
         onPutOut={putOut}
         onRemoveAll={removeAll}
       />
@@ -349,11 +359,12 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
           disabled={state.lights.length >= LIMITS.maxLights}
           onAdd={addLight}
         />
-        {entries.length === 0 ? (
+        {entries.length > 0 && activeFilter}
+        {listed.length === 0 ? (
           <p className="text-theme-secondary">No lights burning.</p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {entries.map((entry) => (
+            {listed.map((entry) => (
               <LightRow
                 key={entry.light.id}
                 light={entry.light}

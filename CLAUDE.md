@@ -125,6 +125,7 @@ localStorage keys (per browser, not shared):
 
 - `torchlight-theme` — user's selected color palette (useTheme.ts)
 - `torchlight-last-seen-version` — last version seen, drives WhatsNew modal (Navbar.tsx)
+- `torchlight-active-only` — "Active lights only" list filter (useActiveOnly.ts)
 
 ### Deployment
 
