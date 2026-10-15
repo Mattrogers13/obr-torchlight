@@ -529,5 +529,53 @@ describe("Main (Torchlight)", () => {
       localStorage.removeItem("torchlight-active-only");
     });
   });
+
+  describe("multi-player GM actions are one write", () => {
+    const lit = (id: string, name: string) => ({
+      ...burnedOutTorch(false), id, name, endsAt: Date.now() + 600_000,
+    });
+    const room3 = () => ({
+      [ROOM_KEY]: { lights: [lit("a", "GM torch")] },
+      [playerKey("p1")]: { rev: 1, ownerName: "Ash", lights: [lit("b", "Ash's torch")] },
+      [playerKey("p2")]: { rev: 1, ownerName: "Bo", lights: [lit("c", "Bo's torch")] },
+    });
+
+    it("Remove all writes the shared state and every player doc together", async () => {
+      room.metadata = room3();
+      render(<Main player={false} />);
+      fireEvent.click(await screen.findByText("Remove all"));
+      fireEvent.click(screen.getByText("Yes, remove all"));
+      await waitFor(() => expect(OBR.room.setMetadata).toHaveBeenCalledTimes(1));
+      expect(Object.keys(vi.mocked(OBR.room.setMetadata).mock.calls[0][0]).sort()).toEqual(
+        [ROOM_KEY, playerKey("p1"), playerKey("p2")].sort(),
+      );
+      expect(stored().lights).toHaveLength(0);
+      expect(room.metadata[playerKey("p1")]).toMatchObject({ lights: [] });
+      expect(room.metadata[playerKey("p2")]).toMatchObject({ lights: [] });
+    });
+
+    it("Put out across players is one write", async () => {
+      room.metadata = room3();
+      render(<Main player={false} />);
+      fireEvent.click(await screen.findByText("Put out…"));
+      fireEvent.click(screen.getByText("Put out 3"));
+      await waitFor(() => expect(OBR.room.setMetadata).toHaveBeenCalledTimes(1));
+      expect(room.metadata[playerKey("p2")]).toMatchObject({ lights: [{ setAside: "put-out" }] });
+    });
+
+    it("a failed write leaves every doc as it was", async () => {
+      room.metadata = room3();
+      room.failWrites = true;
+      render(<Main player={false} />);
+      fireEvent.click(await screen.findByText("Remove all"));
+      fireEvent.click(screen.getByText("Yes, remove all"));
+      await waitFor(() =>
+        expect(OBR.notification.show).toHaveBeenCalledWith("Torchlight couldn't save: Metadata too large", "ERROR"),
+      );
+      expect(await screen.findByText("Bo's torch")).toBeInTheDocument();
+      expect(screen.getByText("Ash's torch")).toBeInTheDocument();
+      expect(screen.getByText("GM torch")).toBeInTheDocument();
+    });
+  });
 });
 

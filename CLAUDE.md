@@ -120,6 +120,7 @@ Rules:
 - Same rule per token (`replaceTokenLight`, `Light.tokenId`): a right-click on a token sets aside whatever is burning on it, the GM's or a player's.
 - `Light.source` is `torch` / `lantern` / `light-spell`; `SOURCES` in `lights.ts` holds label, range (30 / 60 / 30 ft) and minutes from the core rules. Old lights without a source read as torches.
 - GM "Put out…" sets checked lights aside with `setAside: "put-out"` (shown "Put out", keeps its time, Resume all skips it) and sends the `light-out` broadcast. Flames are pre-checked, Light spells not (rules p.110). "Remove all" clears the shared state and every player doc.
+- Light changes go through `updateLights` (owner → change map), which writes every touched doc in ONE `setMetadata` call. GM actions across players (Remove all, Put out, Pause/Resume all, burn-out marking) must stay one write so they land all-or-nothing.
 - Known limitation: two writers editing the same doc at the same instant is last-write-wins.
 - GM notifications for player activity (lit / removed) come from the GM client diffing light ids against the previous render, not from a broadcast. Lights present at first load and the GM's own removals don't alert.
 
