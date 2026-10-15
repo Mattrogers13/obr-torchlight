@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { themes, ThemeId, ColorMode } from '../themes';
+import { readLocal, writeLocal } from '../storage';
 
 const THEME_STORAGE_KEY = 'torchlight-theme';
 
 export const useTheme = (colorMode: ColorMode) => {
   const [themeId, setThemeId] = useState<ThemeId>(() => {
-    const stored = localStorage.getItem(THEME_STORAGE_KEY);
-    return (stored as ThemeId) || 'dark-fantasy';
+    // A theme that was renamed or removed would otherwise crash on load.
+    const stored = readLocal(THEME_STORAGE_KEY);
+    return stored && stored in themes ? (stored as ThemeId) : 'dark-fantasy';
   });
 
   useEffect(() => {
@@ -34,7 +36,7 @@ export const useTheme = (colorMode: ColorMode) => {
 
   const changeTheme = (newTheme: ThemeId) => {
     setThemeId(newTheme);
-    localStorage.setItem(THEME_STORAGE_KEY, newTheme);
+    writeLocal(THEME_STORAGE_KEY, newTheme);
   };
 
   return { themeId, changeTheme };

@@ -26,36 +26,24 @@ export default function SPA() {
     }
   };
 
-  const handlePlayerChange = (player: Player) => {
-    setRole(player.role);
-  };
-
-  const [version, setVersion] = useState("unknown");
+  // App only renders us once Owlbear is ready, and remounts us on every
+  // scene change, so every listener must be removed on unmount.
   useEffect(() => {
-    fetch("/manifest.json")
-      .then((b) => b.json())
-      .then((j) => j.version)
-      .then(setVersion);
-  }, []);
-
-  useEffect(() => {
-    OBR.onReady(() => {
-      OBR.theme.getTheme().then((theme) => {
-        setTheme(theme.mode.toLowerCase());
-      });
-      OBR.theme.onChange((theme) => {
-        setTheme(theme.mode.toLowerCase());
-      });
-      OBR.player.onChange(handlePlayerChange);
-      OBR.player.getRole().then(setRole);
-    });
+    OBR.theme.getTheme().then((theme) => setTheme(theme.mode.toLowerCase()));
+    OBR.player.getRole().then(setRole);
+    const offTheme = OBR.theme.onChange((theme) => setTheme(theme.mode.toLowerCase()));
+    const offPlayer = OBR.player.onChange((player: Player) => setRole(player.role));
+    return () => {
+      offTheme();
+      offPlayer();
+    };
   }, []);
 
   return (
     <Routes>
       <Route path="/" element={<Layout />}>
         <Route index element={role ? <Main player={role === "PLAYER"} /> : null} />
-        <Route path={paths.about} element={<About version={version} currentTheme={themeId} onThemeChange={changeTheme} />} />
+        <Route path={paths.about} element={<About currentTheme={themeId} onThemeChange={changeTheme} />} />
         <Route path="*" element={<NoMatch />} />
       </Route>
     </Routes>

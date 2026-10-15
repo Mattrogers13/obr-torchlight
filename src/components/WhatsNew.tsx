@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { releaseHighlights, changelogUrl } from '../releaseNotes';
+import { readLocal, writeLocal } from '../storage';
 
 interface WhatsNewProps {
   currentVersion: string;
@@ -10,9 +11,7 @@ const WhatsNew: React.FC<WhatsNewProps> = ({ currentVersion, storageKey }) => {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
-    if (currentVersion === "unknown") return;
-
-    const lastSeenVersion = localStorage.getItem(storageKey);
+    const lastSeenVersion = readLocal(storageKey);
 
     if (lastSeenVersion !== currentVersion) {
       setIsVisible(true);
@@ -22,7 +21,7 @@ const WhatsNew: React.FC<WhatsNewProps> = ({ currentVersion, storageKey }) => {
   }, [currentVersion, storageKey]);
 
   const handleDismiss = () => {
-    localStorage.setItem(storageKey, currentVersion);
+    writeLocal(storageKey, currentVersion);
     setIsVisible(false);
   };
 
