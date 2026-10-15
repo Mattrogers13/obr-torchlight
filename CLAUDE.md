@@ -53,7 +53,7 @@ The app has two distinct entry modes controlled by URL parameters:
 
 Entry point: `src/main.tsx`
 
-A second page, `background.html` → `src/background.ts` (manifest `background_url: "/background"`; Cloudflare 307s `.html` URLs to the extensionless path), runs while Torchlight is enabled in the room, panel open or not. It registers the token right-click menu (Light torch / Light lantern / Cast Light) and writes through `src/lightFromTokens.ts` (same permission rules as the panel). Keep it free of React imports; metadata keys live in `util/constants.ts` for that reason.
+A second page, `background.html` → `src/background.ts` (manifest `background_url: "/background"`; Cloudflare 307s `.html` URLs to the extensionless path), runs while Torchlight is enabled in the room, panel open or not. It registers one "Torchlight" token right-click entry whose embedded submenu is a third page, `menu.html` → `src/menu.ts` (embed url `/menu`, plain DOM, no React): Light torch / Light lantern / Cast Light. Both write through `src/lightFromTokens.ts` (same permission rules as the panel). Keep it free of React imports; metadata keys live in `util/constants.ts` for that reason.
 
 The plugin ID `"io.github.mattrogers13.torchlight"` is exported as `ID` from `src/components/util/constants.ts` and prefixes the room metadata key and broadcast channel.
 

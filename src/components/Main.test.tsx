@@ -261,7 +261,7 @@ describe("Main (Torchlight)", () => {
     it("a player lights their own torch into their own key, named after them", async () => {
       room.metadata = { [ROOM_KEY]: { playersCanAdd: true } };
       render(<Main player={true} />);
-      expect(await screen.findByText("Your Lights")).toBeInTheDocument();
+      expect(await screen.findByText("Light Sources")).toBeInTheDocument();
       await waitFor(() => expect(screen.getByPlaceholderText("Kira's torch")).toBeInTheDocument());
       fireEvent.click(screen.getByText("Light"));
       await waitFor(() => expect(mineStored()?.lights).toHaveLength(1));
@@ -308,6 +308,22 @@ describe("Main (Torchlight)", () => {
       expect(await screen.findByText("Lantern")).toBeInTheDocument();
       expect(screen.getByText("Kira's torch")).toBeInTheDocument();
       expect(screen.queryByLabelText(/^Remove/)).not.toBeInTheDocument();
+    });
+
+    it("shows players one list: their own lights plus the GM's when shared", async () => {
+      room.metadata = {
+        [ROOM_KEY]: {
+          showToPlayers: true, playersCanAdd: true, playersCanRemove: true,
+          lights: [{ ...burnedOutTorch(true), id: "gm", name: "Kira's lantern", source: "lantern", tokenId: "tok-kira" }],
+        },
+        [playerKey("me")]: { rev: 1, ownerName: "Kira", lights: [{ ...turnTorch(0), name: "Old torch" }] },
+      };
+      render(<Main player={true} />);
+      expect(await screen.findByText("Kira's lantern")).toBeInTheDocument();
+      expect(screen.getByText("Old torch")).toBeInTheDocument();
+      expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(1);
+      expect(screen.getByLabelText("Remove Old torch")).toBeInTheDocument();
+      expect(screen.queryByLabelText("Remove Kira's lantern")).not.toBeInTheDocument();
     });
 
     it("player hook refuses to write someone else's key", async () => {

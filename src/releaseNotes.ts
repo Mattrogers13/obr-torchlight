@@ -6,6 +6,14 @@ export interface ReleaseHighlight {
 
 export const releaseHighlights: ReleaseHighlight[] = [
   {
+    version: "2026-10-15.5",
+    date: "October 15, 2026",
+    highlights: [
+      "🖱️ The right-click menu has one Torchlight entry with Light torch / Light lantern / Cast Light inside",
+      "📋 Players see one Light Sources list: their own lights plus the GM's when shared",
+    ]
+  },
+  {
     version: "2026-10-15.4",
     date: "October 15, 2026",
     highlights: [

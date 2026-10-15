@@ -25,6 +25,8 @@ export default defineConfig({
       input: {
         main: resolve('index.html'),
         background: resolve('background.html'),
+        // Token right-click submenu, embedded by background.ts.
+        menu: resolve('menu.html'),
       },
     },
   },

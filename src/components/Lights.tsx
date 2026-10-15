@@ -251,7 +251,9 @@ export const PlayerLightList: React.FC<{
   lights: Light[];
   now: number;
   onRemove?: (light: Light) => void;
-}> = ({ lights, now, onRemove }) =>
+  // Ids that get a remove button (a player's own lights).
+  removable?: Set<string>;
+}> = ({ lights, now, onRemove, removable }) =>
   lights.length === 0 ? (
     <p className="text-theme-secondary">No lights burning.</p>
   ) : (
@@ -264,7 +266,7 @@ export const PlayerLightList: React.FC<{
             <StatusTag light={light} now={now} />
           </span>
           <span className="ml-auto"><LightReadout light={light} now={now} /></span>
-          {onRemove && (
+          {onRemove && (!removable || removable.has(light.id)) && (
             <button onClick={() => onRemove(light)} title="Remove" aria-label={`Remove ${light.name}`} className="text-theme-secondary hover:text-theme text-xl leading-none">
               ×
             </button>

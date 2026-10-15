@@ -80,8 +80,9 @@ const Homepage: React.FC = () => {
         </p>
         <h3 className="text-xl font-semibold mb-2 mt-4 text-theme">Right-click a Token</h3>
         <p className="mb-2 text-theme-secondary">
-          Right-click a character token and choose <strong>Light torch</strong>,{" "}
-          <strong>Light lantern</strong> or <strong>Cast Light</strong> to start
+          Right-click a character token, open <strong>Torchlight</strong>, and
+          choose <strong>Light torch</strong>, <strong>Light lantern</strong> or{" "}
+          <strong>Cast Light</strong> to start
           a 60-minute light named after it. Lighting a token that already has a
           light pauses the old one. Players get the same options on tokens they
           can edit, when the GM allows player lights.
