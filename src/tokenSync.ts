@@ -305,7 +305,8 @@ export const syncOnce = async () => {
   return owned.map((o) => o.light);
 };
 
-// Longest setTimeout delay browsers honor (2^31-1 ms); also a daily recheck.
+// Cap on any wake-up delay: well under setTimeout's 2^31-1 ms limit (longer
+// delays fire at once), and doubles as a daily recheck.
 const MAX_TIMER_MS = 24 * 60 * 60 * 1000;
 // How soon to retry after a failed sync.
 export const SYNC_RETRY_MS = 10_000;
@@ -349,8 +350,8 @@ export const startTokenSync = () => {
     try {
       do {
         again = false;
-        const lights = await syncOnce();
-        if (lights) known = lights;
+        // undefined = not the GM or no scene: nothing of ours to wake up for.
+        known = (await syncOnce()) ?? [];
       } while (again);
     } catch (err) {
       // Retry soon: a token whose light runs out meanwhile must still go dark.

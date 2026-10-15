@@ -16,6 +16,37 @@ import { errorMessage, notify } from "../utils";
 
 export type PlayerDocs = Record<string, PlayerDoc>;
 
+// This client as a writer. Module-level, so it lasts for the page load and
+// survives the panel remounting (tab switches, scene changes); per-mount ids
+// made late echoes of the previous mount's writes look like someone else's.
+const WRITER = crypto.randomUUID().slice(0, 8);
+let lastSeq = 0;
+const ourLatest = new Map<string, number>(); // doc key -> seq of our latest write
+const ourSeen = new Map<string, number>(); // doc key -> highest seq of ours seen back
+
+const stamp = (key: string) => {
+  lastSeq += 1;
+  ourLatest.set(key, lastSeq);
+  return { writer: WRITER, seq: lastSeq };
+};
+
+// A write of ours failed, so no echo is coming; stop waiting for one.
+const abandon = (keys: string[]) => keys.forEach((key) => ourSeen.set(key, ourLatest.get(key) ?? 0));
+
+// Whether to take an incoming doc. Room events arrive in the order the room
+// applied them. Our own older echoes are ignored. Someone else's write is
+// taken unless one of ours to the same doc is still in flight: that write
+// lands after it and replaces it, so taking it would only build our next
+// change on a state the room is about to drop.
+const takeIncoming = (key: string, doc: { writer: string; seq: number }) => {
+  const mine = ourLatest.get(key) ?? 0;
+  if (doc.writer === WRITER) {
+    ourSeen.set(key, Math.max(ourSeen.get(key) ?? 0, doc.seq));
+    return doc.seq >= mine;
+  }
+  return (ourSeen.get(key) ?? 0) >= mine;
+};
+
 // Who this client is. GMs may write the shared state and every player's doc;
 // a player may write only their own doc.
 export interface Writer {
@@ -32,21 +63,6 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
   const latest = useRef<RoomState>(state);
   const latestDocs = useRef<PlayerDocs>(playerDocs);
 
-  // Who we are as a writer, and the seq of our latest write to each doc.
-  const writerId = useRef(crypto.randomUUID().slice(0, 8));
-  const seq = useRef(0);
-  const ourLatest = useRef(new Map<string, number>());
-  const stamp = (key: string) => {
-    seq.current += 1;
-    ourLatest.current.set(key, seq.current);
-    return { writer: writerId.current, seq: seq.current };
-  };
-  // A late echo of our own older write to this doc. Anything written by
-  // someone else (another GM, the right-click menu, a player) is current
-  // room state, whatever its rev, so it's never treated as stale.
-  const isOwnStaleEcho = (key: string, doc: { writer: string; seq: number }) =>
-    doc.writer === writerId.current && doc.seq < (ourLatest.current.get(key) ?? 0);
-
   // Room metadata is shared with every extension; skip changes that didn't
   // touch Torchlight's keys.
   const lastSignature = useRef<string | null>(null);
@@ -57,7 +73,7 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
     lastSignature.current = signature;
 
     const next = parseRoomState(metadata[ROOM_KEY]);
-    if (force || !isOwnStaleEcho(ROOM_KEY, next)) {
+    if (force || takeIncoming(ROOM_KEY, next)) {
       latest.current = next;
       setState(next);
     }
@@ -65,7 +81,7 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
     const docs: PlayerDocs = {};
     for (const [id, doc] of Object.entries(incoming)) {
       const held = latestDocs.current[id];
-      docs[id] = !force && held && isOwnStaleEcho(playerKey(id), doc) ? held : doc;
+      docs[id] = !force && held && !takeIncoming(playerKey(id), doc) ? held : doc;
     }
     latestDocs.current = docs;
     setPlayerDocs(docs);
@@ -94,6 +110,7 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
       OBR.room.setMetadata(update).then(
         () => true,
         (err) => {
+          abandon(Object.keys(update));
           // Room metadata is capped at 16kB shared by all extensions, so a
           // write can fail. Say so and fall back to what the room holds.
           notify(`Torchlight couldn't save: ${errorMessage(err)}`, "ERROR");

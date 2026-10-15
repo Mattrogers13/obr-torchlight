@@ -748,5 +748,43 @@ describe("Main (Torchlight)", () => {
       ...burnedOutTorch(false), id, name, endsAt: Date.now() + 600_000,
     });
   });
+
+  describe("fifth review fixes", () => {
+    const foreign = (lights: unknown[]) =>
+      act(async () => {
+        room.metadata = { [ROOM_KEY]: { rev: 1, writer: "menu-x", seq: 1, lights } };
+        room.listeners.forEach((l) => l(room.metadata));
+      });
+
+    it("a foreign write between our writes doesn't eat our next click", async () => {
+      room.metadata = { [ROOM_KEY]: { rev: 0, lights: [turnTorch(0)] } };
+      render(<Main player={false} />);
+      const plus = await screen.findByTitle("Burn a turn");
+      room.deferEchoes = true;
+      fireEvent.click(plus); // 1 turn
+      fireEvent.click(plus); // 2 turns, still in flight
+      await flushEcho(); // echo of the first click
+      await foreign([turnTorch(0)]); // the room applied someone else's write here
+      fireEvent.click(plus); // built on our 2 turns, not on the foreign 0
+      while (room.echoQueue.length) await flushEcho();
+      await waitFor(() => expect(stored().lights[0]).toMatchObject({ turnsUsed: 3 }));
+    });
+
+    it("a late echo from before the panel remounted doesn't roll it back", async () => {
+      room.metadata = { [ROOM_KEY]: { rev: 0, lights: [turnTorch(0)] } };
+      const first = render(<Main player={false} />);
+      const plus = await screen.findByTitle("Burn a turn");
+      room.deferEchoes = true;
+      fireEvent.click(plus);
+      fireEvent.click(plus);
+      first.unmount(); // e.g. a tab switch
+      render(<Main player={false} />); // loads the room: 2 turns
+      expect(await screen.findByText("2 / 10")).toBeInTheDocument();
+      await flushEcho(); // late echo of the first click (1 turn)
+      expect(screen.getByText("2 / 10")).toBeInTheDocument();
+      room.deferEchoes = false;
+      while (room.echoQueue.length) await flushEcho();
+    });
+  });
 });
 
