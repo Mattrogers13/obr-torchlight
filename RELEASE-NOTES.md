@@ -1,5 +1,25 @@
 # Release Notes
 
+## Version 2026-10-12
+
+First Torchlight release (customized from Shadow Crawler).
+
+### Features
+
+- Multiple named light sources, each real-time (custom minutes) or turn-based (custom turn count)
+- New lights start burning; Pause all / Resume all for breaks
+- Burn-out notification to everyone in the room, sent once per light
+
+### Changes
+
+- Timers compute from a stored end time, so throttled background tabs no longer slow them down
+- State (lights, crawl turns, last encounter roll) moved from the GM's localStorage into Owlbear room metadata: shared, survives reloads, visible to late joiners
+- Room metadata is validated on read
+- Players no longer briefly see the GM view while their role loads
+- Removed Google Analytics
+
+---
+
 ## Version 2026-06-16
 
 ### Bug Fixes

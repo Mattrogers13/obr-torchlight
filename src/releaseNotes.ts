@@ -6,6 +6,16 @@ export interface ReleaseHighlight {
 
 export const releaseHighlights: ReleaseHighlight[] = [
   {
+    version: "2026-10-12",
+    date: "October 12, 2026",
+    highlights: [
+      "🔥 Multiple light sources: track every torch, lantern and spell with its own name and timer",
+      "⏳ Real-time or turn-based per light, with custom minutes or turn counts",
+      "🔄 Timers stay accurate in background tabs and sync to everyone in the room, including late joiners",
+      "⏯️ Pause all / Resume all for breaks",
+    ]
+  },
+  {
     version: "2026-07-20",
     date: "July 20, 2026",
     highlights: [
