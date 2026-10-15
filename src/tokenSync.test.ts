@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("@owlbear-rodeo/sdk", () => ({ default: {}, buildImage: vi.fn() }));
 
 import { createLight, setAsideLight, pause } from "./lights";
-import { desiredSources, dfLight, planSync, rangePx } from "./tokenSync";
+import { desiredSources, dfLight, parseDfLight, planSync, playerMayLight, rangePx } from "./tokenSync";
 
 const T0 = Date.UTC(2026, 9, 15, 20, 0, 0);
 const DPI = 150;
@@ -26,25 +26,70 @@ describe("rangePx", () => {
 describe("desiredSources", () => {
   const on = (tokenId: string, source: "torch" | "lantern" | "light-spell" = "torch") =>
     createLight(`${tokenId}-${source}`, "L", "time", 60, T0, { tokenId, source });
+  const gm = (...lights: ReturnType<typeof on>[]) => lights.map((light) => ({ light, ownerId: null }));
 
   it("lights tokens with an active linked light, including one paused for a break", () => {
-    const want = desiredSources([on("a"), pause(on("b", "lantern"), T0 + 1000)], T0 + 2000);
+    const want = desiredSources(gm(on("a"), pause(on("b", "lantern"), T0 + 1000)), T0 + 2000);
     expect([...want]).toEqual([["a", "torch"], ["b", "lantern"]]);
   });
 
   it("skips lights that are swapped out, put out, burned out, or not on a token", () => {
-    const lights = [
+    const lights = gm(
       setAsideLight(on("a"), T0, "swap"),
       setAsideLight(on("b"), T0, "put-out"),
       on("c"),
       createLight("free", "L", "time", 60, T0),
-    ];
+    );
     expect([...desiredSources(lights, T0 + 61 * 60_000)]).toEqual([]);
     expect([...desiredSources(lights, T0)]).toEqual([["c", "torch"]]);
   });
 
   it("prefers the longer range when two lights share a token", () => {
-    expect(desiredSources([on("a", "torch"), on("a", "lantern")], T0).get("a")).toBe("lantern");
+    expect(desiredSources(gm(on("a", "torch"), on("a", "lantern")), T0).get("a")).toBe("lantern");
+  });
+});
+
+describe("player lights can't be forged onto other tokens", () => {
+  const perms = ["CHARACTER_UPDATE"];
+  const mine = { visible: true, createdUserId: "p1" };
+
+  it("allows a visible token the player could edit", () => {
+    expect(playerMayLight(mine, "p1", perms)).toBe(true);
+    expect(playerMayLight({ ...mine, createdUserId: "gm" }, "p1", perms)).toBe(true);
+  });
+
+  it("never lights a hidden token (it would reveal it through the fog)", () => {
+    expect(playerMayLight({ ...mine, visible: false }, "p1", perms)).toBe(false);
+  });
+
+  it("follows the room's owner-only setting and character permissions", () => {
+    const ownerOnly = ["CHARACTER_UPDATE", "CHARACTER_OWNER_ONLY"];
+    expect(playerMayLight(mine, "p1", ownerOnly)).toBe(true);
+    expect(playerMayLight({ ...mine, createdUserId: "gm" }, "p1", ownerOnly)).toBe(false);
+    expect(playerMayLight(mine, "p1", [])).toBe(false);
+    expect(playerMayLight(undefined, "p1", perms)).toBe(false);
+  });
+
+  it("desiredSources drops a forged player light but keeps the GM's", () => {
+    const light = createLight("x", "L", "time", 60, T0, { tokenId: "monster" });
+    const owned = [{ light, ownerId: "p1" }];
+    const deny = () => false;
+    expect(desiredSources(owned, T0, (_t, owner) => owner === null || deny()).size).toBe(0);
+    expect(desiredSources([{ light, ownerId: null }], T0, (_t, owner) => owner === null || deny()).size).toBe(1);
+  });
+});
+
+describe("parseDfLight (token metadata is editable by others)", () => {
+  it("keeps only known Dynamic Fog fields", () => {
+    expect(parseDfLight({ attenuationRadius: 90, falloff: 0.2, lightType: "PRIMARY", evil: "x".repeat(9999) })).toEqual({
+      attenuationRadius: 90, falloff: 0.2, lightType: "PRIMARY",
+    });
+  });
+
+  it("rejects junk", () => {
+    for (const v of [null, undefined, 3, "x", [], {}, { attenuationRadius: "90" }, { falloff: Infinity }]) {
+      expect(parseDfLight(v)).toBeNull();
+    }
   });
 });
 

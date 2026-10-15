@@ -50,12 +50,35 @@ export const dfLight = (rangePx: number): DfLight => ({
 export const rangePx = (rangeFt: number, dpi: number, unit: string, multiplier: number) =>
   (rangeFt / (unit === "ft" && multiplier > 0 ? multiplier : 5)) * dpi;
 
-// Which source each token should show: any active light linked to it. If
-// two ever overlap, the longer range wins.
-export const desiredSources = (lights: Light[], now: number) => {
+// A light and whose doc it came from (null = the GM's shared state).
+export interface OwnedLight {
+  light: Light;
+  ownerId: string | null;
+}
+
+// Player docs are written by players and can be forged, so a player's light
+// only reaches a token that player could edit anyway, by Owlbear's own room
+// permissions, and never a hidden one (that would reveal it through the fog).
+export const playerMayLight = (
+  token: { visible: boolean; createdUserId: string } | undefined,
+  ownerId: string,
+  roomPermissions: string[],
+) =>
+  !!token &&
+  token.visible &&
+  roomPermissions.includes("CHARACTER_UPDATE") &&
+  (!roomPermissions.includes("CHARACTER_OWNER_ONLY") || token.createdUserId === ownerId);
+
+// Which source each token should show: any active light linked to it that
+// its owner may place there. If two ever overlap, the longer range wins.
+export const desiredSources = (
+  owned: OwnedLight[],
+  now: number,
+  mayLight: (tokenId: string, ownerId: string | null) => boolean = () => true,
+) => {
   const want = new Map<string, LightSource>();
-  for (const light of lights) {
-    if (!light.tokenId || !isActive(light, now)) continue;
+  for (const { light, ownerId } of owned) {
+    if (!light.tokenId || !isActive(light, now) || !mayLight(light.tokenId, ownerId)) continue;
     const current = want.get(light.tokenId);
     if (!current || SOURCES[light.source].rangeFt > SOURCES[current].rangeFt) {
       want.set(light.tokenId, light.source);
@@ -133,20 +156,36 @@ export const planSync = (
   return plan;
 };
 
+// Token metadata is editable by anyone who can edit the token, so only the
+// known Dynamic Fog fields survive a save/restore round trip.
+const DF_NUMBERS = ["attenuationRadius", "sourceRadius", "falloff", "innerAngle", "outerAngle", "rotation"];
+export const parseDfLight = (v: unknown): Record<string, unknown> | null => {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return null;
+  const raw = v as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of DF_NUMBERS) {
+    if (typeof raw[key] === "number" && Number.isFinite(raw[key])) out[key] = raw[key];
+  }
+  if (raw.lightType === "PRIMARY" || raw.lightType === "SECONDARY") out.lightType = raw.lightType;
+  return Object.keys(out).length > 0 ? out : null;
+};
+
 const parseMarker = (v: unknown): TokenMarker | undefined => {
   if (typeof v !== "object" || v === null) return undefined;
   const { saved, source } = v as Record<string, unknown>;
   return typeof source === "string" && source in SOURCES
-    ? { saved: saved ?? null, source: source as LightSource }
+    ? { saved: parseDfLight(saved), source: source as LightSource }
     : undefined;
 };
 
-const allLights = (metadata: Record<string, unknown>) => {
-  const lights = [...parseRoomState(metadata[ROOM_KEY]).lights];
+const allLights = (metadata: Record<string, unknown>): OwnedLight[] => {
+  const owned: OwnedLight[] = parseRoomState(metadata[ROOM_KEY]).lights.map((light) => ({ light, ownerId: null }));
   for (const [key, value] of Object.entries(metadata)) {
-    if (key.startsWith(PLAYER_KEY_PREFIX)) lights.push(...parsePlayerDoc(value).lights);
+    if (!key.startsWith(PLAYER_KEY_PREFIX)) continue;
+    const ownerId = key.slice(PLAYER_KEY_PREFIX.length);
+    owned.push(...parsePlayerDoc(value).lights.map((light) => ({ light, ownerId })));
   }
-  return lights;
+  return owned;
 };
 
 const badge = (token: Item, source: LightSource, dpi: number): Image => {
@@ -174,10 +213,18 @@ const syncOnce = async () => {
 
   const metadata = await OBR.room.getMetadata();
   const now = Date.now();
-  const desired = desiredSources(allLights(metadata), now);
+  const owned = allLights(metadata);
+  const linked = new Set(owned.map((o) => o.light.tokenId).filter((id): id is string => !!id));
 
   const tokens = await OBR.scene.items.getItems(
-    (item) => item.layer === "CHARACTER" && (desired.has(item.id) || item.metadata[TOKEN_KEY] !== undefined),
+    (item) => item.layer === "CHARACTER" && (linked.has(item.id) || item.metadata[TOKEN_KEY] !== undefined),
+  );
+  const tokensById = new Map(tokens.map((t) => [t.id, t]));
+  const permissions = await OBR.room.getPermissions();
+  const desired = desiredSources(
+    owned,
+    now,
+    (tokenId, ownerId) => ownerId === null || playerMayLight(tokensById.get(tokenId), ownerId, permissions),
   );
   const badges = await OBR.scene.items.getItems((item) => item.metadata[BADGE_KEY] !== undefined);
   const [dpi, scale] = await Promise.all([OBR.scene.grid.getDpi(), OBR.scene.grid.getScale()]);
@@ -186,7 +233,11 @@ const syncOnce = async () => {
 
   const plan = planSync(
     desired,
-    tokens.map((t) => ({ id: t.id, dfLight: t.metadata[DF_LIGHT_KEY], marker: parseMarker(t.metadata[TOKEN_KEY]) })),
+    tokens.map((t) => ({
+      id: t.id,
+      dfLight: parseDfLight(t.metadata[DF_LIGHT_KEY]),
+      marker: parseMarker(t.metadata[TOKEN_KEY]),
+    })),
     badges.map((b) => {
       const source = (b.metadata[BADGE_KEY] as { source?: unknown } | undefined)?.source;
       return {
@@ -219,13 +270,12 @@ const syncOnce = async () => {
   }
   if (plan.deleteBadges.length > 0) await OBR.scene.items.deleteItems(plan.deleteBadges);
   if (plan.addBadges.length > 0) {
-    const byId = new Map(tokens.map((t) => [t.id, t]));
     await OBR.scene.items.addItems(
-      plan.addBadges.map(({ tokenId, source }) => badge(byId.get(tokenId)!, source, dpi)),
+      plan.addBadges.map(({ tokenId, source }) => badge(tokensById.get(tokenId)!, source, dpi)),
     );
   }
 
-  return allLights(metadata);
+  return owned.map((o) => o.light);
 };
 
 // Reconciles now, on every room change and scene load, and again right when
