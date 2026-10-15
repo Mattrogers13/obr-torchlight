@@ -28,6 +28,9 @@ const About: React.FC<{ version: string; currentTheme: ThemeId; onThemeChange: (
         </a>{" "}
         by Alvaro Cavalcanti (MIT License)
       </div>
+      <div className="mt-1 text-center text-sm text-theme-secondary">
+        Coded with AI (Claude Code)
+      </div>
       <div className="mt-3 text-center">
         <em className="text-theme-secondary text-sm">Version: {version}</em>
       </div>

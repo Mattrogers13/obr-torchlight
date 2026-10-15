@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { CodeBlock } from "react-code-blocks";
 
 import About from "./About";
 
@@ -43,75 +42,51 @@ const Homepage: React.FC = () => {
             <a href="https://github.com/alvarocavalcanti/shadowcrawler" target="_blank" className="text-theme-primary hover:underline">
               Shadow Crawler
             </a>{" "}
-            by Alvaro Cavalcanti (MIT License).
+            by Alvaro Cavalcanti (MIT License). Coded with AI (Claude Code).
           </em>
         </div>
         <h2 className="text-2xl font-semibold mb-3 text-theme">Overview</h2>
         <div className="mb-4 text-theme-secondary">
-          This extension provides a toolset to run the Crawling phase of the
-          Shadowdark RPG. It includes a torch timer (both real-time and
-          turn-based), a crawling turn counter, a random encounter dice
-          roller, and the ability to save and load the extension state.
+          Track every torch, lantern and light spell in the party, each with
+          its own name and timer. Timers run in real time or count turns, stay
+          accurate in background tabs, and sync to everyone in the room.
         </div>
         <h2 className="text-2xl font-semibold mb-3 text-theme">Installation</h2>
         <div className="mb-4 text-theme-secondary">
           You can follow the instructions on{" "}
           <a href="https://extensions.owlbear.rodeo/guide" className="text-theme-primary hover:underline">Owlbear Rodeo</a>{" "}
           to install the extension, and use the following URL:
-          <br />
-          <br />
-          <CodeBlock text={`${window.location.origin}/manifest.json`} />
+          <pre className="mt-3 p-3 rounded border border-theme bg-theme-card text-theme overflow-x-auto">
+            <code className="select-all">{`${window.location.origin}/manifest.json`}</code>
+          </pre>
         </div>
-        <h2 className="text-2xl font-semibold mb-3 text-theme">Features in Action</h2>
-        <br />
-        <h3 className="text-xl font-semibold mb-2 text-theme">Torch Timer</h3>
-        <p className="mb-2 text-theme-secondary">Keep track of the torch either using real-time or turn count.</p>
-        <img
-          src="/img/torch-timer-01-real-time.png"
-          alt="Real-time Torch"
-          className="mb-2 w-full rounded border border-theme"
-        />
-        <img
-          src="/img/torch-timer-01-turn-count.png"
-          alt="Turn Count Torch"
-          className="mb-2 w-full rounded border border-theme"
-        />
-        <h3 className="text-xl font-semibold mb-2 mt-4 text-theme">Crawling Turns Counter</h3>
-        <p className="mb-2 text-theme-secondary">Keep track of the current crawling turn.</p>
-        <img
-          src="/img/turn-counter.png"
-          alt="Turn Counter"
-          className="mb-2 w-full rounded border border-theme"
-        />
-        <h3 className="text-xl font-semibold mb-2 mt-4 text-theme">Random Encounter Dice Roller</h3>
+        <h2 className="text-2xl font-semibold mb-3 text-theme">Features</h2>
+        <h3 className="text-xl font-semibold mb-2 text-theme">Light Sources</h3>
         <p className="mb-2 text-theme-secondary">
-          Whenever you need to check for a random encounter, you can use this
-          simple dice roller. The result box will become red on a 1.
+          Add as many lights as you need (up to 20). Each one is either real
+          time, with a custom number of minutes, or turn-based, with a custom
+          number of turns. New lights start burning right away.
         </p>
-        <img
-          src="/img/random-encounter-roller.png"
-          alt="Dice Roller"
-          className="mb-2 w-full rounded border border-theme"
-        />
-        <h3 className="text-xl font-semibold mb-2 text-theme">Player View</h3>
+        <h3 className="text-xl font-semibold mb-2 mt-4 text-theme">Adjusting Time</h3>
         <p className="mb-2 text-theme-secondary">
-          You can toggle the <strong>Torch Timer</strong> to be visible to the
-          players. And they will see it as follows:
+          Pause or resume any light, or pause them all for a break. Add or take
+          away 1, 5 or 10 minutes on a real-time light; adding past full
+          extends it.
         </p>
-        <img
-          src="/img/torch-timer-02-real-time.png"
-          alt="Real-time Torch"
-          className="mb-2 w-full rounded border border-theme"
-        />
-        <img
-          src="/img/torch-timer-02-turn-count.png"
-          alt="Turn Count Torch"
-          className="mb-2 w-full rounded border border-theme"
-        />
-        <h3 className="text-xl font-semibold mb-2 text-theme">Data Storage</h3>
+        <h3 className="text-xl font-semibold mb-2 mt-4 text-theme">Burn-out Alerts</h3>
         <p className="mb-2 text-theme-secondary">
-          The extension stores all the data in the browser's local storage, and
-          loads it at startup.
+          When a light goes out, everyone in the room gets a notification,
+          once per light.
+        </p>
+        <h3 className="text-xl font-semibold mb-2 mt-4 text-theme">Player View</h3>
+        <p className="mb-2 text-theme-secondary">
+          The GM can show or hide the light list for players with the eye
+          button. Players see a read-only list of every light and its time.
+        </p>
+        <h3 className="text-xl font-semibold mb-2 mt-4 text-theme">Data Storage</h3>
+        <p className="mb-2 text-theme-secondary">
+          Lights are stored in the Owlbear Rodeo room, so they survive reloads
+          and late joiners see the same timers. Only GMs can change them.
         </p>
         <h2 className="text-2xl font-semibold mb-3 mt-4 text-theme">Feedback</h2>
         <p className="mb-4 text-theme-secondary">
