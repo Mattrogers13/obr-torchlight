@@ -1,18 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 
 import About from "./About";
 
 const Homepage: React.FC = () => {
   const urlParams = new URLSearchParams(window.location.search);
   const isHomepage = urlParams.has("homepage");
-
-  const [version, setVersion] = useState("unknown");
-  useEffect(() => {
-    fetch("/manifest.json")
-      .then((b) => b.json())
-      .then((j) => j.version)
-      .then(setVersion);
-  }, []);
 
   useEffect(() => {
     if (!isHomepage) {
@@ -135,7 +127,7 @@ const Homepage: React.FC = () => {
           .
         </p>
         <h2 className="text-2xl font-semibold mb-3 text-theme">Help Topics</h2>
-        <About version={version} currentTheme="dark-fantasy" onThemeChange={() => {}} showHomepageLink={false} />
+        <About currentTheme="dark-fantasy" onThemeChange={() => {}} showHomepageLink={false} />
       </div>
     </div>
   );

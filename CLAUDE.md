@@ -91,9 +91,9 @@ Route paths are defined in `src/components/util/constants.ts`.
 - **Lights.tsx**: Add-light form, GM light rows, and the read-only player light list
 - **SPA.tsx**: Sets up router, detects player role, syncs OBR theme to `dark` CSS class
 - **Navbar.tsx**: Tab navigation (Main / About), renders the `WhatsNew` modal, shows dev mode banner
-- **About.tsx**: Hosts `ThemeSelector`, repo link, credit line, and version display
+- **About.tsx**: Hosts `ThemeSelector`, repo link, credit line, and version display (`VERSION` from `src/version.ts`, read from manifest.json at build time; nothing fetches the manifest at runtime)
 - **ThemeSelector.tsx**: UI for switching between the 4 color palettes defined in `src/themes.ts`
-- **WhatsNew.tsx**: Modal that shows release highlights when the version in `manifest.json` is newer than what's stored in localStorage
+- **WhatsNew.tsx**: Modal that shows release highlights when the build's version differs from the one stored in localStorage
 - **PluginGate.tsx**: Waits for OBR SDK to be ready before rendering children
 - **OBRLoading.tsx**: Loading state shown while OBR initialises
 - **SceneNotReady.tsx**: Shown when OBR scene is not yet ready
@@ -123,7 +123,7 @@ Rules:
 - Known limitation: two writers editing the same doc at the same instant is last-write-wins.
 - GM notifications for player activity (lit / removed) come from the GM client diffing light ids against the previous render, not from a broadcast. Lights present at first load and the GM's own removals don't alert.
 
-localStorage keys (per browser, not shared):
+localStorage keys (per browser, not shared). Always go through `src/storage.ts` (`readLocal` / `writeLocal`): localStorage throws in Owlbear's iframe under strict privacy settings, and an unguarded read during render blanks the panel.
 
 - `torchlight-theme` — user's selected color palette (useTheme.ts)
 - `torchlight-last-seen-version` — last version seen, drives WhatsNew modal (Navbar.tsx)
@@ -158,7 +158,7 @@ Two independent layers:
 
 ### Icons
 
-Both inline SVG and FontAwesome icons (`@fortawesome/react-fontawesome`) are used across components.
+Inline SVG only (no icon library). Right-click menu and token badge icons live in `public/img/`.
 
 ### Analytics
 

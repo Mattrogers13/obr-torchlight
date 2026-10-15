@@ -1,12 +1,8 @@
 import OBR from "@owlbear-rodeo/sdk";
 
-export const getItemText = (item: any) => {
-  return item.text.richText[0].children[0].text ? item.text.richText[0].children[0].text : item.text.plainText;
-};
+import { readLocal } from "./storage";
 
-export const isDevMode = (): boolean => {
-  return localStorage.getItem("dev-mode") === "true";
-};
+export const isDevMode = (): boolean => readLocal("dev-mode") === "true";
 
 export const errorMessage = (err: unknown) =>
   err instanceof Error ? err.message : String(err);
