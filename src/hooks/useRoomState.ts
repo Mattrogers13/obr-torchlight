@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import OBR, { Metadata } from "@owlbear-rodeo/sdk";
 
-import { ID } from "../components/util/constants";
+import { PLAYER_KEY_PREFIX, ROOM_KEY, playerKey } from "../components/util/constants";
 import {
   PlayerDoc,
   RoomState,
@@ -12,9 +12,7 @@ import {
 } from "../lights";
 import { errorMessage, notify } from "../utils";
 
-export const ROOM_KEY = `${ID}/state`;
-export const PLAYER_KEY_PREFIX = `${ID}/player/`;
-export const playerKey = (playerId: string) => PLAYER_KEY_PREFIX + playerId;
+export { PLAYER_KEY_PREFIX, ROOM_KEY, playerKey };
 
 export type PlayerDocs = Record<string, PlayerDoc>;
 

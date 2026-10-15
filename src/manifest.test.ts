@@ -13,5 +13,7 @@ describe("manifest.json", () => {
     expect(manifest.manifest_version).toBe(1);
     expect(manifest.version).toBeTruthy();
     expect(manifest.action.popover).toBe("/");
+    // The token right-click menu lives in the background page.
+    expect(manifest.background_url).toBe("/background.html");
   });
 });

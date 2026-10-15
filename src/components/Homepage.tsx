@@ -78,6 +78,12 @@ const Homepage: React.FC = () => {
           away 1, 5 or 10 minutes on a real-time light; adding past full
           extends it.
         </p>
+        <h3 className="text-xl font-semibold mb-2 mt-4 text-theme">Right-click a Token</h3>
+        <p className="mb-2 text-theme-secondary">
+          Right-click a character token and choose <strong>Light torch</strong>{" "}
+          to start a 60-minute torch named after it. Players get the same
+          option on tokens they can edit, when the GM allows player lights.
+        </p>
         <h3 className="text-xl font-semibold mb-2 mt-4 text-theme">Burn-out Alerts</h3>
         <p className="mb-2 text-theme-secondary">
           When a light goes out, everyone in the room gets a notification,
