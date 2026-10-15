@@ -111,6 +111,7 @@ Rules:
 - Room metadata is capped at 16kB total across all extensions. Limits in `LIMITS` (20 GM lights, 3 per player, 40-char names) keep us small; failed writes show an error and resync.
 - Burn-out alerts fire once per light, player lights included: the GM client detects them and sets `alerted` in the owning doc. A light that burned out while no GM panel was open alerts when a GM next opens it.
 - Known limitation: two writers editing the same doc at the same instant is last-write-wins.
+- GM notifications for player activity (lit / removed) come from the GM client diffing light ids against the previous render, not from a broadcast. Lights present at first load and the GM's own removals don't alert.
 
 localStorage keys (per browser, not shared):
 

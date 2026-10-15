@@ -6,6 +6,14 @@ export interface ReleaseHighlight {
 
 export const releaseHighlights: ReleaseHighlight[] = [
   {
+    version: "2026-10-16",
+    date: "October 16, 2026",
+    highlights: [
+      "🔔 The GM gets a notification when a player lights or removes a torch",
+      "⏯️ Pause all / Resume all moved to the top of the GM panel",
+    ]
+  },
+  {
     version: "2026-10-15",
     date: "October 15, 2026",
     highlights: [

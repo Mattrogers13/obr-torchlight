@@ -56,6 +56,30 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
   const now = useNow(anyRunning);
   const alertsSent = useRef(new Set<string>());
 
+  // GM only: tell the GM about everything players do (light or remove a
+  // torch), by diffing the room's lights against the last render. Lights
+  // already burning when the panel opens don't count, and neither do the
+  // GM's own removals of player lights.
+  const seen = useRef<Map<string, Entry> | null>(null);
+  const removedByMe = useRef(new Set<string>());
+  useEffect(() => {
+    if (player || !loaded) return;
+    const current = new Map(entries.map((e) => [e.light.id, e]));
+    const previous = seen.current;
+    seen.current = current;
+    if (previous === null) return;
+    for (const [id, e] of current) {
+      if (e.ownerId !== null && !previous.has(id)) {
+        notify(`${e.ownerName || "A player"} lit ${e.light.name}`, "INFO");
+      }
+    }
+    for (const [id, e] of previous) {
+      if (e.ownerId === null || current.has(id)) continue;
+      if (removedByMe.current.delete(id)) continue;
+      notify(`${e.ownerName || "A player"} removed ${e.light.name}`, "INFO");
+    }
+  }, [loaded, state.lights, playerDocs, player]);
+
   useEffect(() => {
     if (!player) return;
     OBR.player.getName().then(setMyName).catch(() => {});
@@ -119,8 +143,10 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
       lights.map((l) => (l.id === entry.light.id ? change(l) : l)),
     );
 
-  const removeLight = (entry: Entry) =>
+  const removeLight = (entry: Entry) => {
+    removedByMe.current.add(entry.light.id);
     changeLights(entry.ownerId, (lights) => lights.filter((l) => l.id !== entry.light.id));
+  };
 
   const addLight = (name: string, kind: LightKind, amount: number) =>
     update((s) =>
@@ -241,6 +267,24 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
         .
       </p>
 
+      {timeLights.length > 0 && (
+        <div className="flex gap-2 mb-4">
+          <button
+            onClick={() => setAllRunning(false)}
+            disabled={!canPauseAll}
+            className={`px-3 py-2 bg-theme-secondary text-white rounded ${canPauseAll ? "" : "opacity-50 cursor-not-allowed"}`}
+          >
+            Pause all
+          </button>
+          <button
+            onClick={() => setAllRunning(true)}
+            disabled={!canResumeAll}
+            className={`px-3 py-2 bg-theme-secondary text-white rounded ${canResumeAll ? "" : "opacity-50 cursor-not-allowed"}`}
+          >
+            Resume all
+          </button>
+        </div>
+      )}
       <div className="bg-theme-card rounded-lg border border-theme p-4 mt-4 mb-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold text-theme">Light Sources</h2>
@@ -296,26 +340,7 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
             ))}
           </ul>
         )}
-        {timeLights.length > 0 && (
-          <div className="flex gap-2 mt-3">
-            <button
-              onClick={() => setAllRunning(false)}
-              disabled={!canPauseAll}
-              className={`px-3 py-2 bg-theme-secondary text-white rounded ${canPauseAll ? "" : "opacity-50 cursor-not-allowed"}`}
-            >
-              Pause all
-            </button>
-            <button
-              onClick={() => setAllRunning(true)}
-              disabled={!canResumeAll}
-              className={`px-3 py-2 bg-theme-secondary text-white rounded ${canResumeAll ? "" : "opacity-50 cursor-not-allowed"}`}
-            >
-              Resume all
-            </button>
-          </div>
-        )}
       </div>
-
     </div>
   );
 };

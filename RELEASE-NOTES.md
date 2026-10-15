@@ -1,5 +1,15 @@
 # Release Notes
 
+## Version 2026-10-16
+
+### Features
+
+- GM notification when a player lights or removes a torch
+
+### Changes
+
+- Pause all / Resume all moved to the top of the GM panel
+
 ## Version 2026-10-15
 
 ### Features

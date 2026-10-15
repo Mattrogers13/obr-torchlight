@@ -98,7 +98,8 @@ const Homepage: React.FC = () => {
           The GM can let players light their own torches (up to 3 each), and
           separately let them remove their own. Players can never remove the
           GM's lights or anyone else's. The GM sees every player light, with
-          its owner's name, and can pause, adjust or remove it.
+          its owner's name, can pause, adjust or remove it, and gets a
+          notification whenever a player lights or removes one.
         </p>
         <h3 className="text-xl font-semibold mb-2 mt-4 text-theme">Data Storage</h3>
         <p className="mb-2 text-theme-secondary">
