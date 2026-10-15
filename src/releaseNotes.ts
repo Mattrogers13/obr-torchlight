@@ -13,6 +13,7 @@ export const releaseHighlights: ReleaseHighlight[] = [
       "⏳ Real-time or turn-based per light, with custom minutes or turn counts",
       "🔄 Timers stay accurate in background tabs and sync to everyone in the room, including late joiners",
       "⏯️ Pause all / Resume all for breaks",
+      "➕ Add or take away 1, 5 or 10 minutes on any real-time light",
     ]
   },
   {

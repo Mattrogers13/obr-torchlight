@@ -8,6 +8,7 @@ First Torchlight release (customized from Shadow Crawler).
 
 - Multiple named light sources, each real-time (custom minutes) or turn-based (custom turn count)
 - New lights start burning; Pause all / Resume all for breaks
+- Add or take away 1, 5 or 10 minutes on any real-time light (adding past full extends it)
 - Burn-out notification to everyone in the room, sent once per light
 
 ### Changes

@@ -4,6 +4,7 @@ import OBR from "@owlbear-rodeo/sdk";
 
 import Main, { LIGHT_OUT_CHANNEL } from "./Main";
 import { ROOM_KEY, useRoomState } from "../hooks/useRoomState";
+import type { Light } from "../lights";
 
 // In-memory stand-in for OBR room metadata and broadcasts.
 const room = vi.hoisted(() => ({
@@ -46,7 +47,7 @@ vi.mock("@owlbear-rodeo/sdk", () => ({
   },
 }));
 
-const stored = () => room.metadata[ROOM_KEY] as { lights: { name: string; alerted: boolean }[] } & Record<string, unknown>;
+const stored = () => room.metadata[ROOM_KEY] as { lights: Pick<Light, "name" | "alerted" | "durationSec" | "endsAt">[] } & Record<string, unknown>;
 
 const burnedOutTorch = (alerted: boolean) => ({
   id: "t1", name: "Kira's torch", kind: "time",
@@ -77,6 +78,19 @@ describe("Main (Torchlight)", () => {
     expect(await screen.findByText("Light 1")).toBeInTheDocument();
     expect(stored().lights).toHaveLength(1);
     expect(stored().lights[0]).toMatchObject({ name: "Light 1", kind: "time", durationSec: 3600 });
+  });
+
+  it("adds and removes minutes on a real-time light", async () => {
+    render(<Main player={false} />);
+    fireEvent.click(await screen.findByText("Light"));
+    fireEvent.click(await screen.findByLabelText("Add 10 minutes on Light 1"));
+    await waitFor(() => expect(stored().lights[0].durationSec).toBe(70 * 60));
+    fireEvent.click(screen.getByLabelText("Remove 5 minutes on Light 1"));
+    await waitFor(() => {
+      const left = (stored().lights[0].endsAt! - Date.now()) / 1000;
+      expect(left).toBeGreaterThan(64 * 60);
+      expect(left).toBeLessThanOrEqual(65 * 60);
+    });
   });
 
   it("adds a named turn light with a custom count", async () => {
