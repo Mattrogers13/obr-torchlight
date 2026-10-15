@@ -87,8 +87,7 @@ export const useGmAlerts = ({
   // burnKeys in the shared state's `burnedOut`, so the GM never writes a
   // player's doc for this. A light that burned out while no GM panel was
   // open alerts on next open.
-  // Records in flight or recently tried: id -> earliest time to try again
-  // (Infinity while the write is in flight).
+  // Burn-outs recently recorded or tried: id -> earliest time to try again.
   const recording = useRef(new Map<string, number>());
   // Burn-outs already broadcast this session (a retried record mustn't re-alert).
   const broadcast = useRef(new Set<string>());
@@ -105,20 +104,16 @@ export const useGmAlerts = ({
     const announced = (e: LightEntry) =>
       e.light.alerted || (e.ownerId !== null && recorded.has(burnKey(e.light)));
     // Forget lights that are gone (removed while burned out).
-    const live = new Set(entries.map((e) => e.light.id));
+    const liveIds = new Set(entries.map((e) => e.light.id));
     for (const set of [broadcast.current, pendingAnnounce.current]) {
-      set.forEach((id) => live.has(id) || set.delete(id));
+      set.forEach((id) => liveIds.has(id) || set.delete(id));
     }
-    recording.current.forEach((_t, id) => live.has(id) || recording.current.delete(id));
+    recording.current.forEach((_t, id) => liveIds.has(id) || recording.current.delete(id));
     for (const e of entries) {
       if (!isOut(e.light, now)) {
         recording.current.delete(e.light.id);
         broadcast.current.delete(e.light.id);
         pendingAnnounce.current.delete(e.light.id);
-      } else if (announced(e) && recording.current.get(e.light.id) === Infinity) {
-        // Recorded (optimistically or in the room): drop the in-flight mark so
-        // an overwritten record is redone on the next change.
-        recording.current.delete(e.light.id);
       }
     }
     const burnedOut = entries.filter(
@@ -126,11 +121,17 @@ export const useGmAlerts = ({
     );
     if (burnedOut.length === 0) return;
 
+    // Don't record these again until BURN_OUT_RETRY_MS from now, whatever
+    // happens: a failed record is retried then, and so is one another writer
+    // overwrote. Set before writing, so no ordering of the save's callbacks
+    // can turn this into a tight loop.
+    const retryAt = Date.now() + BURN_OUT_RETRY_MS;
     const ids = new Set(burnedOut.map((e) => e.light.id));
-    ids.forEach((id) => recording.current.set(id, Infinity));
+    ids.forEach((id) => recording.current.set(id, retryAt));
+    clearTimeout(retryTimer.current);
+    retryTimer.current = setTimeout(() => setRetryTick((t) => t + 1), BURN_OUT_RETRY_MS);
     const gmIds = new Set(burnedOut.filter((e) => e.ownerId === null).map((e) => e.light.id));
     const keys = burnedOut.filter((e) => e.ownerId !== null).map((e) => burnKey(e.light));
-    const liveIds = new Set(entries.map((e) => e.light.id));
     // Ids this write actually records. Another GM may have recorded some
     // already; then this write is a no-op for them and they mustn't be
     // announced twice.
@@ -159,12 +160,8 @@ export const useGmAlerts = ({
         );
         fresh.forEach((e) => broadcast.current.add(e.light.id));
         broadcastLightOut(fresh.map((e) => e.light.name));
-        return;
       }
-      // Failed: retry after a pause, never in a tight loop.
-      ids.forEach((id) => recording.current.set(id, Date.now() + BURN_OUT_RETRY_MS));
-      clearTimeout(retryTimer.current);
-      retryTimer.current = setTimeout(() => setRetryTick((t) => t + 1), BURN_OUT_RETRY_MS);
+      // Failed: retried at retryAt (set above).
     });
   }, [gm, loaded, entries, state.burnedOut, now, update, retryTick]);
 

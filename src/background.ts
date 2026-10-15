@@ -39,6 +39,7 @@ OBR.onReady(async () => {
   // What Owlbear currently has. Only updated after create/remove succeeds,
   // so a failed call is retried on the next change instead of sticking.
   let shown: boolean | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
   const sync = async () => {
     const gm = (await OBR.player.getRole()) === "GM";
@@ -48,13 +49,13 @@ OBR.onReady(async () => {
     if (allowed) await OBR.contextMenu.create(MENU);
     else await OBR.contextMenu.remove(MENU_ID);
     shown = allowed;
+    clearTimeout(retryTimer); // a pending retry is no longer needed
   };
 
   // One sync at a time; changes that arrive meanwhile collapse into one rerun
   // that reads fresh state, so out-of-order results can't win.
   let running = false;
   let pending = false;
-  let retryTimer: ReturnType<typeof setTimeout> | undefined;
   const requestSync = async () => {
     if (running) {
       pending = true;

@@ -28,6 +28,9 @@ const ourLanded = new Map<string, number>(); // doc key -> highest seq of ours t
 // Docs where rule 1 held off another writer's doc; they need a re-read
 // once our write settles. Nothing else does.
 const heldOff = new Set<string>();
+// The mounted panel's re-read. A save from a panel that has since unmounted
+// (tab switch mid-write) must re-read into the one that's open now.
+let mountedResync: (() => void) | null = null;
 
 const nextStamp = (key: string): Stamp => {
   lastSeq += 1;
@@ -51,7 +54,17 @@ const inFlight = (key: string) => (ourSettled.get(key) ?? 0) < (ourLatest.get(ke
 //    replaces it.
 // 2. If rule 1 held anything off for a doc, read the room once our write to
 //    it settles, and take that snapshot for every doc with nothing in flight.
+// Last stamp the room showed us for each doc, to tell a doc that changed in
+// this event from one that's just along for the ride.
+const roomStamps = new Map<string, string>();
+const stampKey = (doc: Stamp) => `${doc.writer}#${doc.seq}`;
+
 const takeEvent = (key: string, doc: Stamp) => {
+  // Unchanged in the room since the last event (this event is about some
+  // other doc): keep what we hold, and don't count it as held off.
+  const unchanged = roomStamps.get(key) === stampKey(doc);
+  roomStamps.set(key, stampKey(doc));
+  if (unchanged) return !inFlight(key);
   if (doc.writer === WRITER) {
     const newerLanded = (ourLanded.get(key) ?? 0) > doc.seq;
     land(key, doc.seq);
@@ -95,7 +108,11 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
       changes.current += 1;
     }
     lastSignature.current = signature;
-    const take = (key: string, doc: Stamp) => (from === "snapshot" ? !inFlight(key) : takeEvent(key, doc));
+    const take = (key: string, doc: Stamp) => {
+      if (from === "event") return takeEvent(key, doc);
+      roomStamps.set(key, stampKey(doc));
+      return !inFlight(key);
+    };
 
     const next = parseRoomState(metadata[ROOM_KEY]);
     if (take(ROOM_KEY, next) || !haveState.current) {
@@ -121,24 +138,37 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
   // Read the room and take it as truth (rule 2). A snapshot is only good if
   // no Torchlight change arrived while it was in flight (that change is
   // newer); otherwise read again, so the panel always converges.
+  const mounted = useRef(true);
+  const retry = useRef<ReturnType<typeof setTimeout>>();
   const resync = useCallback(async () => {
     try {
       for (let attempt = 0; attempt < 5; attempt++) {
         const asked = changes.current;
         const metadata = await OBR.room.getMetadata();
+        if (!mounted.current) return;
         if (changes.current === asked) return apply(metadata, "snapshot");
       }
       // A busy room kept changing under us. Events are applying meanwhile,
-      // so this is a best-effort re-read; try again shortly.
-      setTimeout(() => resync(), 2000);
+      // so this is a best-effort re-read; try again shortly (while mounted).
+      clearTimeout(retry.current);
+      retry.current = setTimeout(() => mounted.current && resync(), 2000);
     } catch (err) {
       notify(`Torchlight couldn't load room state: ${errorMessage(err)}`, "ERROR");
     }
   }, [apply]);
 
   useEffect(() => {
+    mounted.current = true;
+    const mine = () => void resync();
+    mountedResync = mine;
     resync().finally(() => setLoaded(true));
-    return OBR.room.onMetadataChange((metadata) => apply(metadata, "event"));
+    const off = OBR.room.onMetadataChange((metadata) => apply(metadata, "event"));
+    return () => {
+      mounted.current = false;
+      clearTimeout(retry.current);
+      if (mountedResync === mine) mountedResync = null;
+      off();
+    };
   }, [apply, resync]);
 
   // Resolves true once the write landed, false if it failed (the user is
@@ -164,10 +194,10 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
             else settle(key, seq);
             if (heldOff.delete(key)) reread = true;
           }
-          if (reread) resync();
+          if (reread) mountedResync?.();
           return saved;
         }),
-    [resync],
+    [],
   );
 
   // Changes that return the same object are no-ops and write nothing.

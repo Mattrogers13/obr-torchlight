@@ -190,11 +190,11 @@ export const setAsideLight = (light: Light, now: number, why: Exclude<SetAside, 
   setAside: why,
 });
 
-// A player lights something new: their current light is paused and kept
-// alongside the new one; anything older is dropped.
 // The light a new one replaces: the newest active one.
 export const currentLight = (lights: Light[], now: number) => [...lights].reverse().find((l) => isActive(l, now));
 
+// A player lights something new: their current light is paused and kept
+// alongside the new one; anything older is dropped.
 export const replacePlayerLight = (lights: Light[], fresh: Light, now: number): Light[] => {
   const current = currentLight(lights, now);
   const keep = current ? setAsideLight(current, now) : lights[lights.length - 1];

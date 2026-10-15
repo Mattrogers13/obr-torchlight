@@ -36,7 +36,7 @@ export default function SPA() {
     OBR.theme
       .getTheme()
       .then((theme) => alive && !gotTheme && setTheme(theme.mode.toLowerCase()))
-      .catch(() => {}); // keep the default theme
+      .catch((err) => console.warn(`Torchlight couldn't get the Owlbear theme: ${errorMessage(err)}`));
     // Without a role nothing renders, so a failed lookup retries (backing off
     // to 30 s), but only while we're still mounted.
     let gotRole = false;
