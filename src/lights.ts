@@ -1,6 +1,8 @@
 // Light timers and shared room state. Pure functions only: every time-based
 // calculation takes `now` (epoch ms, UTC) so it can be tested deterministically.
 
+import { PLAYER_KEY_PREFIX } from "./components/util/constants";
+
 export type LightKind = "time" | "turns";
 
 // Shadowdark light sources (core rules: torch and lantern p.34, Light spell
@@ -316,3 +318,17 @@ export const parsePlayerDoc = (raw: unknown): PlayerDoc => {
   if (typeof raw.ownerName === "string") doc.ownerName = cleanName(raw.ownerName, "");
   return doc;
 };
+
+// Every player doc in room metadata, by player id. Ids must be plausible
+// (non-empty, at most 64 chars); anything else is ignored everywhere.
+export const parsePlayerDocs = (metadata: Record<string, unknown>): Record<string, PlayerDoc> => {
+  const docs: Record<string, PlayerDoc> = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    if (!key.startsWith(PLAYER_KEY_PREFIX)) continue;
+    const id = key.slice(PLAYER_KEY_PREFIX.length);
+    if (id.length === 0 || id.length > 64) continue;
+    docs[id] = parsePlayerDoc(value);
+  }
+  return docs;
+};
+

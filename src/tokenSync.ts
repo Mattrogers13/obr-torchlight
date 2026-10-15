@@ -7,7 +7,7 @@ import {
   SOURCES,
   isActive,
   isRunning,
-  parsePlayerDoc,
+  parsePlayerDocs,
   parseRoomState,
 } from "./lights";
 import { errorMessage } from "./utils";
@@ -194,10 +194,8 @@ const parseMarker = (v: unknown): TokenMarker | undefined => {
 
 const allLights = (metadata: Record<string, unknown>): OwnedLight[] => {
   const owned: OwnedLight[] = parseRoomState(metadata[ROOM_KEY]).lights.map((light) => ({ light, ownerId: null }));
-  for (const [key, value] of Object.entries(metadata)) {
-    if (!key.startsWith(PLAYER_KEY_PREFIX)) continue;
-    const ownerId = key.slice(PLAYER_KEY_PREFIX.length);
-    owned.push(...parsePlayerDoc(value).lights.map((light) => ({ light, ownerId })));
+  for (const [ownerId, doc] of Object.entries(parsePlayerDocs(metadata))) {
+    owned.push(...doc.lights.map((light) => ({ light, ownerId })));
   }
   return owned;
 };

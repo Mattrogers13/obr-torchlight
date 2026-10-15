@@ -39,6 +39,9 @@ import {
 
 export const LIGHT_OUT_CHANNEL = `${ID}/light-out`;
 
+// How long to wait before re-marking a burn-out whose save failed.
+export const BURN_OUT_RETRY_MS = 10_000;
+
 // Broadcasts can come from any client, so only accept a short list of strings.
 const parseLightOut = (data: unknown): string[] =>
   Array.isArray(data)
@@ -63,7 +66,10 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
   ];
   const anyRunning = entries.some((e) => isRunning(e.light));
   const now = useNow(anyRunning);
-  const alertsSent = useRef(new Set<string>());
+  // Burn-outs being marked: id -> earliest time to try again (Infinity while
+  // the write is in flight). A failed write retries after a pause, so a full
+  // room doesn't turn into a tight write/fail/resync loop.
+  const alertsSent = useRef(new Map<string, number>());
   const [activeOnly, toggleActiveOnly] = useActiveOnly();
   const activeFilter = (
     <label className="flex items-center gap-2 mb-3 text-sm text-theme-secondary">
@@ -84,14 +90,21 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
     const previous = seen.current;
     seen.current = current;
     if (previous === null) return;
+    // Owners who lit something new in this change.
     const litBy = new Set<string>();
     for (const [id, e] of current) {
-      if (e.ownerId === null) continue;
-      const before = previous.get(id);
-      if (!before) {
+      if (e.ownerId !== null && !previous.has(id)) {
         litBy.add(e.ownerId);
         notify(`${e.ownerName || "A player"} lit ${e.light.name}`, "INFO");
-      } else if (e.light.setAside === "swap" && before.light.setAside !== "swap") {
+      }
+    }
+    // A player's light set aside counts as "they paused it" only when they
+    // also lit a new one. The GM lighting their token sets it aside too,
+    // and that's the GM's doing, not the player's.
+    for (const [id, e] of current) {
+      const before = previous.get(id);
+      if (e.ownerId === null || !before || !litBy.has(e.ownerId)) continue;
+      if (e.light.setAside === "swap" && before.light.setAside !== "swap") {
         notify(`${e.ownerName || "A player"} paused ${e.light.name}`, "INFO");
       }
     }
@@ -121,7 +134,10 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
   );
 
   // Applies the same change to every listed owner's lights in one write.
-  const changeLights = (owners: Iterable<string | null>, change: (lights: Light[]) => Light[]) =>
+  const changeLights = (
+    owners: Iterable<string | null>,
+    change: (lights: Light[]) => Light[],
+  ): Promise<boolean> =>
     updateLights(new Map([...new Set(owners)].map((owner) => [owner, change])));
 
   // GM only: detect burn-out once per light, player lights included. The
@@ -134,16 +150,19 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
       if (!light.alerted && !isOut(light, now)) alertsSent.current.delete(light.id);
     }
     const burnedOut = entries.filter(
-      ({ light: l }) => !l.alerted && isOut(l, now) && !alertsSent.current.has(l.id),
+      ({ light: l }) => !l.alerted && isOut(l, now) && (alertsSent.current.get(l.id) ?? 0) <= Date.now(),
     );
     if (burnedOut.length === 0) return;
 
     const ids = new Set(burnedOut.map((e) => e.light.id));
-    ids.forEach((id) => alertsSent.current.add(id));
+    ids.forEach((id) => alertsSent.current.set(id, Infinity));
     changeLights(
       burnedOut.map((e) => e.ownerId),
       (lights) => lights.map((l) => (ids.has(l.id) ? { ...pause(l, Date.now()), alerted: true } : l)),
-    );
+    ).then((saved) => {
+      // Not marked in the room, so try again on the next tick.
+      if (!saved) ids.forEach((id) => alertsSent.current.set(id, Date.now() + BURN_OUT_RETRY_MS));
+    });
     const names = burnedOut.map((e) => e.light.name);
     OBR.broadcast
       .sendMessage(LIGHT_OUT_CHANNEL, names, { destination: "ALL" })
@@ -161,10 +180,18 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
       lights.map((l) => (l.id === entry.light.id ? change(l) : l)),
     );
 
-  const removeLight = (entry: Entry) => {
-    removedByMe.current.add(entry.light.id);
-    changeLights([entry.ownerId], (lights) => lights.filter((l) => l.id !== entry.light.id));
+  // Only players' lights are diffed for "removed" alerts, so only those need
+  // remembering, and only until the write lands or fails.
+  const removeLights = (removed: Entry[], owners: (string | null)[], change: (lights: Light[]) => Light[]) => {
+    const ids = removed.filter((e) => e.ownerId !== null).map((e) => e.light.id);
+    ids.forEach((id) => removedByMe.current.add(id));
+    changeLights(owners, change).then((saved) => {
+      if (!saved) ids.forEach((id) => removedByMe.current.delete(id));
+    });
   };
+
+  const removeLight = (entry: Entry) =>
+    removeLights([entry], [entry.ownerId], (lights) => lights.filter((l) => l.id !== entry.light.id));
 
   const addLight = (name: string, kind: LightKind, amount: number, source: LightSource) =>
     update((s) =>
@@ -218,13 +245,12 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
       );
   };
 
-  const removeAll = () => {
-    entries.forEach((e) => removedByMe.current.add(e.light.id));
-    changeLights(
+  const removeAll = () =>
+    removeLights(
+      entries,
       entries.map((e) => e.ownerId),
       () => [],
     );
-  };
 
   if (!loaded) {
     return <div className="p-4 text-theme-secondary">Loading…</div>;
