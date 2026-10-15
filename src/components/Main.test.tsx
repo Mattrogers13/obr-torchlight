@@ -49,6 +49,11 @@ vi.mock("@owlbear-rodeo/sdk", () => ({
 
 const stored = () => room.metadata[ROOM_KEY] as { lights: Pick<Light, "name" | "alerted" | "durationSec" | "endsAt">[] } & Record<string, unknown>;
 
+const turnTorch = (turnsUsed: number) => ({
+  id: "t2", name: "Lantern", kind: "turns", durationSec: 0, remainingSec: 0, endsAt: null,
+  maxTurns: 10, turnsUsed, alerted: false,
+});
+
 const burnedOutTorch = (alerted: boolean) => ({
   id: "t1", name: "Kira's torch", kind: "time",
   durationSec: 60, remainingSec: 60, endsAt: Date.now() - 1000,
@@ -68,7 +73,8 @@ describe("Main (Torchlight)", () => {
   it("renders the GM tools", async () => {
     render(<Main player={false} />);
     expect(await screen.findByText("Light Sources")).toBeInTheDocument();
-    expect(screen.getByText("Crawling Turns Counter")).toBeInTheDocument();
+    expect(screen.queryByText("Crawling Turns Counter")).not.toBeInTheDocument();
+    expect(screen.queryByText("Random Encounter Check")).not.toBeInTheDocument();
     expect(screen.getByText("No lights burning.")).toBeInTheDocument();
   });
 
@@ -110,13 +116,6 @@ describe("Main (Torchlight)", () => {
     expect(screen.getByText("Light")).toBeDisabled();
   });
 
-  it("increments the crawling turns counter in room state", async () => {
-    render(<Main player={false} />);
-    fireEvent.click(await screen.findByText("+"));
-    expect(await screen.findByText("01")).toBeInTheDocument();
-    expect(stored().crawlTurns).toBe(1);
-  });
-
   it("alerts once for a light that burned out while the panel was closed", async () => {
     room.metadata = { [ROOM_KEY]: { lights: [burnedOutTorch(false)] } };
     render(<Main player={false} />);
@@ -150,10 +149,10 @@ describe("Main (Torchlight)", () => {
   });
 
   it("survives malformed room metadata", async () => {
-    room.metadata = { [ROOM_KEY]: { lights: "nope", crawlTurns: "lots" } };
+    room.metadata = { [ROOM_KEY]: { lights: "nope", showToPlayers: "yes" } };
     render(<Main player={false} />);
     expect(await screen.findByText("No lights burning.")).toBeInTheDocument();
-    expect(screen.getByText("00")).toBeInTheDocument();
+    expect(screen.getByTitle("Show to Players")).toBeInTheDocument();
   });
 
   it("tells the GM when a save fails", async () => {
@@ -181,33 +180,34 @@ describe("Main (Torchlight)", () => {
   it("refuses writes from a read-only (player) client", async () => {
     const { result } = renderHook(() => useRoomState(false));
     await waitFor(() => expect(result.current.loaded).toBe(true));
-    act(() => result.current.update((st) => ({ ...st, crawlTurns: 99 })));
+    act(() => result.current.update((st) => ({ ...st, showToPlayers: true })));
     expect(OBR.room.setMetadata).not.toHaveBeenCalled();
-    expect(result.current.state.crawlTurns).toBe(0);
+    expect(result.current.state.showToPlayers).toBe(false);
   });
 
   it("doesn't lose rapid clicks to stale echoes of its own writes", async () => {
+    room.metadata = { [ROOM_KEY]: { lights: [turnTorch(0)] } };
     render(<Main player={false} />);
-    const plus = await screen.findByText("+");
+    const plus = await screen.findByTitle("Burn a turn");
     room.deferEchoes = true;
     fireEvent.click(plus);
     fireEvent.click(plus);
-    await flushEcho(); // late echo of the first write (crawlTurns: 1)
+    await flushEcho(); // late echo of the first write (turnsUsed: 1)
     fireEvent.click(plus);
     while (room.echoQueue.length) await flushEcho();
-    await waitFor(() => expect(stored().crawlTurns).toBe(3));
-    expect(await screen.findByText("03")).toBeInTheDocument();
+    await waitFor(() => expect(stored().lights[0]).toMatchObject({ turnsUsed: 3 }));
+    expect(await screen.findByText("3 / 10")).toBeInTheDocument();
   });
 
   it("applies newer changes made by another GM", async () => {
-    room.metadata = { [ROOM_KEY]: { rev: 4, crawlTurns: 2 } };
+    room.metadata = { [ROOM_KEY]: { rev: 4, lights: [turnTorch(2)] } };
     render(<Main player={false} />);
-    expect(await screen.findByText("02")).toBeInTheDocument();
+    expect(await screen.findByText("2 / 10")).toBeInTheDocument();
     await act(async () => {
-      room.metadata = { [ROOM_KEY]: { rev: 5, crawlTurns: 9 } };
+      room.metadata = { [ROOM_KEY]: { rev: 5, lights: [turnTorch(9)] } };
       room.listeners.forEach((l) => l(room.metadata));
     });
-    expect(screen.getByText("09")).toBeInTheDocument();
+    expect(screen.getByText("9 / 10")).toBeInTheDocument();
   });
 
   it("still alerts the GM when the burn-out broadcast fails", async () => {

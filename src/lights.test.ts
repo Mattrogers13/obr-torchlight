@@ -166,13 +166,13 @@ describe("parseRoomState (untrusted metadata)", () => {
   it("returns empty state for missing or non-object data", () => {
     for (const raw of [undefined, null, 42, "x", [], true]) {
       expect(parseRoomState(raw)).toEqual({
-        rev: 0, lights: [], showToPlayers: false, crawlTurns: 0, encounterRoll: null, encounterTurn: 0,
+        rev: 0, lights: [], showToPlayers: false,
       });
     }
   });
 
   it("round-trips valid state", () => {
-    const state = { rev: 7, lights: [valid], showToPlayers: true, crawlTurns: 4, encounterRoll: 1, encounterTurn: 3 };
+    const state = { rev: 7, lights: [valid], showToPlayers: true };
     expect(parseRoomState(JSON.parse(JSON.stringify(state)))).toEqual(state);
   });
 
@@ -200,18 +200,15 @@ describe("parseRoomState (untrusted metadata)", () => {
         { ...valid, durationSec: 60, remainingSec: 99999 },
         { id: "t", name: "T", kind: "turns", maxTurns: 10, turnsUsed: 50, alerted: false },
       ],
-      crawlTurns: -3,
-      encounterTurn: 1e9,
     });
     expect(state.lights[0].remainingSec).toBe(60);
     expect(state.lights[1].turnsUsed).toBe(10);
-    expect(state.crawlTurns).toBe(0);
-    expect(state.encounterTurn).toBe(LIMITS.maxCrawlTurns);
   });
 
-  it("rejects impossible encounter rolls", () => {
-    expect(parseRoomState({ encounterRoll: 7 }).encounterRoll).toBeNull();
-    expect(parseRoomState({ encounterRoll: 0 }).encounterRoll).toBeNull();
+  it("drops leftover fields from older versions", () => {
+    const state = parseRoomState({ lights: [], crawlTurns: 4, encounterRoll: 1 });
+    expect(state).not.toHaveProperty("crawlTurns");
+    expect(state).not.toHaveProperty("encounterRoll");
   });
 
   it("drops duplicate ids and caps the light count", () => {

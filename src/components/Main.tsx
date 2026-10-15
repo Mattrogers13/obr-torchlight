@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef } from "react";
 import OBR from "@owlbear-rodeo/sdk";
 
 import PlayerView from "./PlayerView";
@@ -36,7 +36,6 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
   const { state, loaded, update } = useRoomState(!player);
   const anyRunning = state.lights.some(isRunning);
   const now = useNow(anyRunning);
-  const [rolling, setRolling] = useState(false);
   const alertsSent = useRef(new Set<string>());
 
   // Everyone shows the burn-out notification; only a GM sends it.
@@ -119,20 +118,6 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
     }));
   };
 
-  const changeCrawlTurns = (delta: number) =>
-    update((s) => ({
-      ...s,
-      crawlTurns: Math.min(LIMITS.maxCrawlTurns, Math.max(0, s.crawlTurns + delta)),
-    }));
-
-  const rollRandomEncounter = async () => {
-    const roll = Math.floor(Math.random() * 6) + 1;
-    setRolling(true);
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    setRolling(false);
-    update((s) => ({ ...s, encounterRoll: roll, encounterTurn: s.crawlTurns }));
-  };
-
   if (!loaded) {
     return <div className="p-4 text-theme-secondary">Loading…</div>;
   }
@@ -159,7 +144,7 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
     <div className="p-4">
       <h1 className="text-2xl font-bold mb-2 text-theme">Torchlight</h1>
       <p className="mb-4 text-theme-secondary">
-        A toolset for running the Crawling Phase of the{" "}
+        Light source timers for the{" "}
         <a
           href="https://www.thearcanelibrary.com/pages/shadowdark"
           target="_blank"
@@ -171,7 +156,7 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
         .
       </p>
 
-      <div className="bg-theme-card rounded-lg border border-theme p-4 mt-4">
+      <div className="bg-theme-card rounded-lg border border-theme p-4 mt-4 mb-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold text-theme">Light Sources</h2>
           <button
@@ -229,52 +214,6 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
         )}
       </div>
 
-      <div className="bg-theme-card rounded-lg border border-theme p-4 mt-4">
-        <h2 className="text-lg font-semibold mb-3 text-theme">Crawling Turns Counter</h2>
-        <div className="flex gap-2">
-          <button
-            onClick={() => changeCrawlTurns(-1)}
-            className="px-4 py-2 bg-theme-primary text-white rounded transition-colors"
-          >
-            -
-          </button>
-          <button className="px-4 py-2 bg-theme-secondary text-white rounded cursor-default">
-            {state.crawlTurns.toString().padStart(2, "0")}
-          </button>
-          <button
-            onClick={() => changeCrawlTurns(1)}
-            className="px-4 py-2 bg-theme-primary text-white rounded transition-colors"
-          >
-            +
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-theme-card rounded-lg border border-theme p-4 mt-4 mb-4">
-        <h2 className="text-lg font-semibold mb-3 text-theme">Random Encounter Check</h2>
-        <div className="flex gap-2 items-center">
-          <button
-            onClick={() => rollRandomEncounter()}
-            disabled={rolling}
-            className="px-4 py-2 bg-theme-primary text-white rounded transition-colors"
-          >
-            Roll 1d6
-          </button>
-          <button
-            className={`px-4 py-2 rounded cursor-default ${
-              !rolling && state.encounterRoll === 1
-                ? "bg-theme-danger text-white"
-                : "bg-theme-secondary text-white"
-            }`}
-            disabled
-          >
-            {rolling || state.encounterRoll === null ? "-" : state.encounterRoll}
-          </button>
-        </div>
-        <p className="mt-2 text-theme-secondary">
-          Last check's <strong>Turn</strong>: {state.encounterTurn}
-        </p>
-      </div>
     </div>
   );
 };
