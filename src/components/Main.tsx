@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useRef } from "react";
 import OBR from "@owlbear-rodeo/sdk";
 
 import { useGmAlerts, useLightOutListener } from "../hooks/useGmAlerts";
@@ -8,9 +8,6 @@ import { isOut, isRunning } from "../lights";
 import GmPanel from "./GmPanel";
 import { LightEntry } from "./Lights";
 import PlayerPanel from "./PlayerPanel";
-
-export { LIGHT_OUT_CHANNEL } from "../alerts";
-export { BURN_OUT_RETRY_MS } from "../hooks/useGmAlerts";
 
 // Loads the room's lights, runs the alerts, and shows the GM or player view.
 const Main: React.FC<{ player: boolean }> = ({ player }) => {
@@ -31,11 +28,14 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
     [state.lights, playerDocs],
   );
 
-  // Tick only while something is actually counting down (a burned-out light
-  // still has an endsAt).
-  const now = useNow(entries.some((e) => isRunning(e.light) && !isOut(e.light, Date.now())));
+  // Tick while something is counting down as of the last tick. Judging by
+  // the last tick (not the wall clock) keeps the ticker running until a tick
+  // lands past endsAt, so the burn-out check always sees the light go out.
+  const lastTick = useRef(Date.now());
+  const now = useNow(entries.some((e) => isRunning(e.light) && !isOut(e.light, lastTick.current)));
+  lastTick.current = now;
   useLightOutListener();
-  const removedByMe = useGmAlerts({ gm: !player, loaded, entries, state, now, update });
+  const { removedByMe, restoredAfterFailure } = useGmAlerts({ gm: !player, loaded, entries, state, now, update });
 
   if (!loaded) return <div className="p-4 text-theme-secondary">Loading…</div>;
 
@@ -56,6 +56,7 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
       update={update}
       updateLights={updateLights}
       removedByMe={removedByMe}
+      restoredAfterFailure={restoredAfterFailure}
     />
   );
 };

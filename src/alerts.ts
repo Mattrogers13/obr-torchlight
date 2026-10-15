@@ -1,6 +1,6 @@
 import OBR from "@owlbear-rodeo/sdk";
 
-import { ID } from "./components/util/constants";
+import { ID } from "./constants";
 import { LIMITS } from "./lights";
 import { errorMessage, notify } from "./utils";
 

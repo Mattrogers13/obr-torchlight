@@ -3,7 +3,7 @@ import OBR from "@owlbear-rodeo/sdk";
 
 import { LIGHT_OUT_CHANNEL, broadcastLightOut, parseLightOut } from "../alerts";
 import { LightEntry } from "../components/Lights";
-import { RoomState, burnKey, isOut, pause, pruneBurnedOut } from "../lights";
+import { RoomState, burnKey, isOut, mapLights, pause, pruneBurnedOut } from "../lights";
 import { notify } from "../utils";
 
 // How long to wait before re-recording a burn-out whose save failed.
@@ -20,8 +20,9 @@ export const useLightOutListener = () =>
     [],
   );
 
-// GM-only alerting. Returns `removedByMe`, which the GM's own removals of
-// player lights fill so they don't read as "<player> removed ...".
+// GM-only alerting. Returns refs the GM's own removals fill: `removedByMe`
+// so they don't read as "<player> removed ...", and `restoredAfterFailure`
+// so a light a failed removal puts back doesn't read as "<player> lit ...".
 export const useGmAlerts = ({
   gm,
   loaded,
@@ -38,6 +39,8 @@ export const useGmAlerts = ({
   update: (change: (s: RoomState) => RoomState) => Promise<boolean>;
 }) => {
   const removedByMe = useRef(new Set<string>());
+  // Player lights a failed GM removal put back (via resync): not newly lit.
+  const restoredAfterFailure = useRef(new Set<string>());
 
   // Tell the GM about everything players do (light, pause or remove a
   // light), by diffing the room's lights against the last render. Lights
@@ -54,6 +57,10 @@ export const useGmAlerts = ({
     const litBy = new Set<string>();
     for (const [id, e] of current) {
       if (e.ownerId !== null && !previous.has(id)) {
+        if (restoredAfterFailure.current.delete(id)) {
+          removedByMe.current.delete(id);
+          continue;
+        }
         litBy.add(e.ownerId);
         notify(`${e.ownerName || "A player"} lit ${e.light.name}`, "INFO");
       }
@@ -110,11 +117,11 @@ export const useGmAlerts = ({
     const gmIds = new Set(burnedOut.filter((e) => e.ownerId === null).map((e) => e.light.id));
     const keys = burnedOut.filter((e) => e.ownerId !== null).map((e) => burnKey(e.light));
     const liveIds = new Set(entries.map((e) => e.light.id));
-    update((s) => ({
-      ...s,
-      lights: s.lights.map((l) => (gmIds.has(l.id) ? { ...pause(l, Date.now()), alerted: true } : l)),
-      burnedOut: keys.length > 0 ? pruneBurnedOut([...s.burnedOut, ...keys], liveIds) : s.burnedOut,
-    })).then((saved) => {
+    update((s) => {
+      const lights = mapLights(s.lights, (l) => (gmIds.has(l.id) ? { ...pause(l, Date.now()), alerted: true } : l));
+      const burned = keys.length > 0 ? pruneBurnedOut([...s.burnedOut, ...keys], liveIds) : s.burnedOut;
+      return lights === s.lights && burned === s.burnedOut ? s : { ...s, lights, burnedOut: burned };
+    }).then((saved) => {
       if (saved) return;
       // Not recorded in the room: retry after a pause, never in a tight loop.
       ids.forEach((id) => recording.current.set(id, Date.now() + BURN_OUT_RETRY_MS));
@@ -127,5 +134,5 @@ export const useGmAlerts = ({
     broadcastLightOut(fresh.map((e) => e.light.name));
   }, [gm, loaded, entries, state.burnedOut, now, update, retryTick]);
 
-  return removedByMe;
+  return { removedByMe, restoredAfterFailure };
 };

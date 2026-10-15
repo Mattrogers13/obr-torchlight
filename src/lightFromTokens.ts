@@ -1,6 +1,6 @@
 import OBR, { Metadata } from "@owlbear-rodeo/sdk";
 
-import { ROOM_KEY, playerKey } from "./components/util/constants";
+import { ROOM_KEY, playerKey } from "./constants";
 import {
   LIMITS,
   Light,

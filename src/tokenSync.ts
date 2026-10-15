@@ -1,6 +1,6 @@
 import OBR, { Image, Item, buildImage } from "@owlbear-rodeo/sdk";
 
-import { ID, PLAYER_KEY_PREFIX, ROOM_KEY } from "./components/util/constants";
+import { ID, PLAYER_KEY_PREFIX, ROOM_KEY } from "./constants";
 import {
   Light,
   LightSource,

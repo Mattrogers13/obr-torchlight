@@ -1,6 +1,6 @@
 import OBR, { ContextMenuItem } from "@owlbear-rodeo/sdk";
 
-import { ID, ROOM_KEY } from "./components/util/constants";
+import { ID, ROOM_KEY } from "./constants";
 import { parseRoomState } from "./lights";
 import { startTokenSync } from "./tokenSync";
 import { errorMessage } from "./utils";

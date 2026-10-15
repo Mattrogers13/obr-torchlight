@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import OBR, { Metadata } from "@owlbear-rodeo/sdk";
 
-import { PLAYER_KEY_PREFIX, ROOM_KEY, playerKey } from "../components/util/constants";
+import { ROOM_KEY, playerKey } from "../constants";
 import {
   Light,
   PlayerDoc,
@@ -12,8 +12,6 @@ import {
   parseRoomState,
 } from "../lights";
 import { errorMessage, notify } from "../utils";
-
-export { PLAYER_KEY_PREFIX, ROOM_KEY, playerKey };
 
 export type PlayerDocs = Record<string, PlayerDoc>;
 

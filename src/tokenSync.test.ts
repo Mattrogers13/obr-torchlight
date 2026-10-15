@@ -4,7 +4,7 @@ vi.mock("@owlbear-rodeo/sdk", () => ({ default: {}, buildImage: vi.fn() }));
 
 import { createLight, setAsideLight, pause } from "./lights";
 import { desiredSources, dfLight, parseDfLight, planSync, playerMayLight, rangePx, torchlightSignature } from "./tokenSync";
-import { ROOM_KEY, playerKey } from "./components/util/constants";
+import { ROOM_KEY, playerKey } from "./constants";
 
 const T0 = Date.UTC(2026, 9, 15, 20, 0, 0);
 const DPI = 150;
