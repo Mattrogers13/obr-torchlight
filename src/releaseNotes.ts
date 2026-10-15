@@ -6,6 +6,15 @@ export interface ReleaseHighlight {
 
 export const releaseHighlights: ReleaseHighlight[] = [
   {
+    version: "2026-10-15.4",
+    date: "October 15, 2026",
+    highlights: [
+      "🏮 Torch, Lantern and Light spell: pick the source when adding, or right-click a token for Light torch / Light lantern / Cast Light",
+      "💨 GM Put out…: a checklist of what's burning, torches and lanterns pre-checked, for wind, water or a dispel",
+      "🧹 GM Remove all, with a confirm",
+    ]
+  },
+  {
     version: "2026-10-15.3",
     date: "October 15, 2026",
     highlights: [

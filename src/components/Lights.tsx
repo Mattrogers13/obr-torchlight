@@ -6,7 +6,11 @@ import {
   LIMITS,
   Light,
   LightKind,
+  LightSource,
+  SOURCES,
+  SOURCE_IDS,
   formatClock,
+  isActive,
   isOut,
   isRunning,
   remainingSec,
@@ -46,6 +50,13 @@ export const EyeSlashIcon = () => (
   </svg>
 );
 
+// Every light in the room, whoever owns it. ownerId null = the GM's shared state.
+export interface LightEntry {
+  light: Light;
+  ownerId: string | null;
+  ownerName: string;
+}
+
 const buttonPrimary = "px-3 py-2 bg-theme-primary text-white rounded transition-colors";
 const buttonSecondary = "px-3 py-2 bg-theme-secondary text-white rounded transition-colors";
 const inputClass = "px-3 py-2 border border-theme rounded bg-theme-card text-theme";
@@ -57,9 +68,15 @@ const TIME_STEPS = [-10, -5, -1, 1, 5, 10];
 const StatusTag: React.FC<{ light: Light; now: number }> = ({ light, now }) =>
   isOut(light, now) ? (
     <span className="ml-2 text-sm text-theme-danger">Out</span>
+  ) : light.setAside === "put-out" ? (
+    <span className="ml-2 text-sm text-theme-danger">Put out</span>
   ) : light.setAside ? (
     <span className="ml-2 text-sm text-theme-secondary">Paused</span>
   ) : null;
+
+const SourceTag: React.FC<{ light: Light }> = ({ light }) => (
+  <span className="ml-2 text-xs font-normal text-theme-secondary">{SOURCES[light.source].label}</span>
+);
 
 const LightReadout: React.FC<{ light: Light; now: number }> = ({ light, now }) => {
   const out = isOut(light, now);
@@ -73,11 +90,12 @@ const LightReadout: React.FC<{ light: Light; now: number }> = ({ light, now }) =
 };
 
 export const AddLightForm: React.FC<{
-  defaultName: string;
+  defaultName: (source: LightSource) => string;
   disabled: boolean;
-  onAdd: (name: string, kind: LightKind, amount: number) => void;
+  onAdd: (name: string, kind: LightKind, amount: number, source: LightSource) => void;
 }> = ({ defaultName, disabled, onAdd }) => {
   const [name, setName] = useState("");
+  const [source, setSource] = useState<LightSource>("torch");
   const [kind, setKind] = useState<LightKind>("time");
   const [amount, setAmount] = useState(DEFAULT_MINUTES);
 
@@ -87,27 +105,46 @@ export const AddLightForm: React.FC<{
 
   const handleKindChange = (next: LightKind) => {
     setKind(next);
-    setAmount(next === "time" ? DEFAULT_MINUTES : DEFAULT_TURNS);
+    setAmount(next === "time" ? SOURCES[source].minutes : DEFAULT_TURNS);
+  };
+
+  const handleSourceChange = (next: LightSource) => {
+    setSource(next);
+    if (kind === "time") setAmount(SOURCES[next].minutes);
   };
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     if (disabled || !amountValid) return;
-    onAdd(name, kind, amount);
+    onAdd(name, kind, amount, source);
     setName("");
   };
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-2 mb-4">
-      <input
-        type="text"
-        value={name}
-        maxLength={LIMITS.maxNameLength}
-        placeholder={defaultName}
-        onChange={(e) => setName(e.target.value)}
-        aria-label="Light name"
-        className={`w-full ${inputClass}`}
-      />
+      <div className="flex gap-2">
+        <select
+          value={source}
+          onChange={(e) => handleSourceChange(e.target.value as LightSource)}
+          aria-label="Light source"
+          className={inputClass}
+        >
+          {SOURCE_IDS.map((id) => (
+            <option key={id} value={id}>
+              {SOURCES[id].label}
+            </option>
+          ))}
+        </select>
+        <input
+          type="text"
+          value={name}
+          maxLength={LIMITS.maxNameLength}
+          placeholder={defaultName(source)}
+          onChange={(e) => setName(e.target.value)}
+          aria-label="Light name"
+          className={`flex-1 min-w-0 ${inputClass}`}
+        />
+      </div>
       <div className="flex gap-2 items-center">
         <select
           value={kind}
@@ -160,6 +197,7 @@ export const LightRow: React.FC<{
       <div className="flex items-center justify-between mb-2">
         <span className="font-semibold text-theme truncate" title={light.name}>
           {light.name}
+          <SourceTag light={light} />
           {owner && <span className="ml-2 text-sm font-normal text-theme-secondary">({owner})</span>}
           <StatusTag light={light} now={now} />
         </span>
@@ -222,6 +260,7 @@ export const PlayerLightList: React.FC<{
         <li key={light.id} className={`flex items-center gap-2 border border-theme rounded p-3 ${isOut(light, now) || light.setAside ? "opacity-60" : ""}`}>
           <span className="text-theme truncate" title={light.name}>
             {light.name}
+            <SourceTag light={light} />
             <StatusTag light={light} now={now} />
           </span>
           <span className="ml-auto"><LightReadout light={light} now={now} /></span>
@@ -234,3 +273,120 @@ export const PlayerLightList: React.FC<{
       ))}
     </ul>
   );
+
+// GM controls at the top of the panel. "Put out" opens a checklist of what's
+// burning, with flames (torches, lanterns) pre-checked: wind and water put
+// out flames on a failed DC 15 DEX check, a Light spell only to a Dud or a
+// dispel (rules p.110). Remove all asks for a second click.
+export const GmBulkActions: React.FC<{
+  entries: LightEntry[];
+  now: number;
+  canPauseAll: boolean;
+  canResumeAll: boolean;
+  onPauseAll: () => void;
+  onResumeAll: () => void;
+  onPutOut: (ids: Set<string>) => void;
+  onRemoveAll: () => void;
+}> = ({ entries, now, canPauseAll, canResumeAll, onPauseAll, onResumeAll, onPutOut, onRemoveAll }) => {
+  const [mode, setMode] = useState<"put-out" | "remove" | null>(null);
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const burning = entries.filter((e) => isActive(e.light, now));
+  if (entries.length === 0) return null;
+
+  const small = "px-2 py-1 text-sm text-white rounded transition-colors";
+  const enabled = (on: boolean) => (on ? "" : "opacity-50 cursor-not-allowed");
+
+  const openPutOut = () => {
+    setChecked(new Set(burning.filter((e) => SOURCES[e.light.source].flame).map((e) => e.light.id)));
+    setMode("put-out");
+  };
+  const toggle = (id: string) =>
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+
+  return (
+    <div className="mb-4">
+      <div className="flex flex-wrap gap-2">
+        <button onClick={onPauseAll} disabled={!canPauseAll} className={`${small} bg-theme-secondary ${enabled(canPauseAll)}`}>
+          Pause all
+        </button>
+        <button onClick={onResumeAll} disabled={!canResumeAll} className={`${small} bg-theme-secondary ${enabled(canResumeAll)}`}>
+          Resume all
+        </button>
+        <button
+          onClick={openPutOut}
+          disabled={burning.length === 0}
+          className={`${small} bg-theme-secondary ${enabled(burning.length > 0)}`}
+        >
+          Put out…
+        </button>
+        <button onClick={() => setMode("remove")} className={`${small} bg-theme-danger`}>
+          Remove all
+        </button>
+      </div>
+
+      {mode === "put-out" && (
+        <div className="mt-2 p-3 rounded border border-theme bg-theme-card">
+          <p className="text-sm text-theme-secondary mb-2">
+            Torches and lanterns are checked: wind and water put out flames. Uncheck anyone who made
+            their DEX save.
+          </p>
+          <ul className="flex flex-col gap-1 mb-3">
+            {burning.map((e) => (
+              <li key={e.light.id}>
+                <label className="flex items-center gap-2 text-sm text-theme">
+                  <input type="checkbox" checked={checked.has(e.light.id)} onChange={() => toggle(e.light.id)} />
+                  {e.light.name}
+                  <span className="text-xs text-theme-secondary">
+                    {SOURCES[e.light.source].label}
+                    {e.ownerId !== null && ` · ${e.ownerName || "Player"}`}
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                onPutOut(checked);
+                setMode(null);
+              }}
+              disabled={checked.size === 0}
+              className={`${small} bg-theme-danger ${enabled(checked.size > 0)}`}
+            >
+              Put out {checked.size}
+            </button>
+            <button onClick={() => setMode(null)} className={`${small} bg-theme-secondary`}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {mode === "remove" && (
+        <div className="mt-2 p-3 rounded border border-theme bg-theme-card">
+          <p className="text-sm text-theme mb-2">
+            Remove all {entries.length} lights, players' included? This can't be undone.
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                onRemoveAll();
+                setMode(null);
+              }}
+              className={`${small} bg-theme-danger`}
+            >
+              Yes, remove all
+            </button>
+            <button onClick={() => setMode(null)} className={`${small} bg-theme-secondary`}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

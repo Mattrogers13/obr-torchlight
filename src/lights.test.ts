@@ -13,6 +13,7 @@ import {
   parseRoomState,
   pause,
   replacePlayerLight,
+  SOURCES,
   setAsideLight,
   remainingSec,
   reset,
@@ -254,7 +255,7 @@ describe("one light per player (rules p.84)", () => {
 
   it("pausing pauses the light, keeps its time, and isn't a burn-out", () => {
     const out = setAsideLight(torch, T0 + 600_000);
-    expect(out.setAside).toBe(true);
+    expect(out.setAside).toBe("swap");
     expect(isRunning(out)).toBe(false);
     expect(remainingSec(out, T0 + 9e9)).toBe(3000);
     expect(isOut(out, T0 + 9e9)).toBe(false);
@@ -262,35 +263,60 @@ describe("one light per player (rules p.84)", () => {
 
   it("lighting a new one pauses the current one and keeps just the two", () => {
     const lights = replacePlayerLight([torch], lantern, T0 + 600_000);
-    expect(lights.map((l) => [l.id, l.setAside])).toEqual([["torch", true], ["lantern", false]]);
+    expect(lights.map((l) => [l.id, !!l.setAside])).toEqual([["torch", true], ["lantern", false]]);
 
     const spell = createLight("spell", "Light", "time", 60, T0 + 1_200_000);
     const next = replacePlayerLight(lights, spell, T0 + 1_200_000);
-    expect(next.map((l) => [l.id, l.setAside])).toEqual([["lantern", true], ["spell", false]]);
+    expect(next.map((l) => [l.id, !!l.setAside])).toEqual([["lantern", true], ["spell", false]]);
   });
 
   it("with nothing burning, keeps the most recent old light as is", () => {
     const burnedOut = pause(createLight("old", "Old", "time", 1, T0), T0 + 120_000);
     const lights = replacePlayerLight([burnedOut], lantern, T0 + 600_000);
-    expect(lights.map((l) => [l.id, l.setAside])).toEqual([["old", false], ["lantern", false]]);
+    expect(lights.map((l) => [l.id, !!l.setAside])).toEqual([["old", false], ["lantern", false]]);
     expect(replacePlayerLight([], lantern, T0)).toEqual([lantern]);
   });
 
   it("relighting or resetting clears paused", () => {
     const out = setAsideLight(torch, T0 + 600_000);
-    expect(resume(out, T0 + 700_000).setAside).toBe(false);
-    expect(reset(out).setAside).toBe(false);
+    expect(resume(out, T0 + 700_000).setAside).toBeNull();
+    expect(reset(out).setAside).toBeNull();
   });
 
   it("reads the token link from metadata, rejecting junk", () => {
-    const linked = createLight("a", "T", "time", 60, T0, "tok-1");
+    const linked = createLight("a", "T", "time", 60, T0, { tokenId: "tok-1" });
     expect(parseRoomState({ lights: [linked] }).lights[0].tokenId).toBe("tok-1");
     expect(parseRoomState({ lights: [{ ...linked, tokenId: 7 }] }).lights[0].tokenId).toBeNull();
     expect(parseRoomState({ lights: [{ ...linked, tokenId: "x".repeat(65) }] }).lights[0].tokenId).toBeNull();
   });
 
   it("reads paused from metadata", () => {
-    expect(parseRoomState({ lights: [{ ...torch, setAside: true }] }).lights[0].setAside).toBe(true);
-    expect(parseRoomState({ lights: [{ ...torch, setAside: "yes" }] }).lights[0].setAside).toBe(false);
+    expect(parseRoomState({ lights: [{ ...torch, setAside: "swap" }] }).lights[0].setAside).toBe("swap");
+    expect(parseRoomState({ lights: [{ ...torch, setAside: "yes" }] }).lights[0].setAside).toBeNull();
   });
 });
+
+describe("light sources (core rules)", () => {
+  it("match the rulebook: torch near, lantern double near, Light spell near; 1 hour each", () => {
+    expect(SOURCES.torch).toMatchObject({ rangeFt: 30, minutes: 60, flame: true });
+    expect(SOURCES.lantern).toMatchObject({ rangeFt: 60, minutes: 60, flame: true });
+    expect(SOURCES["light-spell"]).toMatchObject({ rangeFt: 30, minutes: 60, flame: false });
+  });
+
+  it("stores the source and defaults unknown ones to torch", () => {
+    const lantern = createLight("a", "L", "time", 60, T0, { source: "lantern" });
+    expect(parseRoomState({ lights: [lantern] }).lights[0].source).toBe("lantern");
+    expect(parseRoomState({ lights: [{ ...lantern, source: "lava" }] }).lights[0].source).toBe("torch");
+    expect(parseRoomState({ lights: [{ ...lantern, source: undefined }] }).lights[0].source).toBe("torch");
+  });
+
+  it("put out keeps the time, and reads back; old `true` means a swap", () => {
+    const lit = createLight("a", "T", "time", 60, T0);
+    const out = setAsideLight(lit, T0 + 600_000, "put-out");
+    expect(out.setAside).toBe("put-out");
+    expect(remainingSec(out, T0 + 9e9)).toBe(3000);
+    expect(parseRoomState({ lights: [out] }).lights[0].setAside).toBe("put-out");
+    expect(parseRoomState({ lights: [{ ...lit, setAside: true }] }).lights[0].setAside).toBe("swap");
+  });
+});
+

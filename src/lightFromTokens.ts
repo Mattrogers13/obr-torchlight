@@ -2,23 +2,20 @@ import OBR, { Metadata } from "@owlbear-rodeo/sdk";
 
 import { PLAYER_KEY_PREFIX, ROOM_KEY, playerKey } from "./components/util/constants";
 import {
-  DEFAULT_MINUTES,
   LIMITS,
   Light,
+  LightSource,
+  SOURCES,
   cleanName,
   createLight,
   isActive,
+  lightName,
   parsePlayerDoc,
   parseRoomState,
   replacePlayerLight,
   replaceTokenLight,
   setAsideLight,
 } from "./lights";
-
-export const torchName = (tokenName: string) => {
-  const base = tokenName.trim();
-  return cleanName(base ? `${base}'s torch` : "", "Torch");
-};
 
 export interface Lighter {
   gm: boolean;
@@ -31,7 +28,7 @@ export interface Token {
   name: string;
 }
 
-// Lights a real-time torch on tokens, written straight to room metadata
+// Lights a real-time light source on tokens, written straight to room metadata
 // (this runs from the background script, with no panel state to go through).
 // Same rules as the panel: GMs write the shared state, players write only
 // their own doc, one light at a time, and only when the GM allows it.
@@ -41,13 +38,18 @@ export const lightFromTokens = async (
   who: Lighter,
   tokens: Token[],
   now: number,
+  source: LightSource = "torch",
 ): Promise<string> => {
+  const minutes = SOURCES[source].minutes;
   const metadata = await OBR.room.getMetadata();
   const state = parseRoomState(metadata[ROOM_KEY]);
   const fresh = (token: Token) =>
-    createLight(crypto.randomUUID(), torchName(token.name), "time", DEFAULT_MINUTES, now, token.id);
+    createLight(crypto.randomUUID(), lightName(token.name, source), "time", minutes, now, {
+      tokenId: token.id,
+      source,
+    });
   const describe = (lit: Light[], paused: string[], extra = "") =>
-    `Lit ${lit.map((l) => l.name).join(", ")} (${DEFAULT_MINUTES} min).` +
+    `Lit ${lit.map((l) => l.name).join(", ")} (${minutes} min).` +
     (paused.length > 0 ? ` Paused ${paused.join(", ")}.` : "") +
     extra;
 
@@ -88,7 +90,7 @@ export const lightFromTokens = async (
 
   // Players carry one light at a time: the first selected token gets it and
   // their current light is paused (rules p.84).
-  if (!state.playersCanAdd) return "Your GM hasn't allowed players to light torches.";
+  if (!state.playersCanAdd) return "Your GM hasn't allowed players to light their own.";
   if (tokens.length === 0) return "No token selected.";
   const key = playerKey(who.playerId);
   const doc = parsePlayerDoc(metadata[key]);

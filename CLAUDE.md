@@ -53,7 +53,7 @@ The app has two distinct entry modes controlled by URL parameters:
 
 Entry point: `src/main.tsx`
 
-A second page, `background.html` → `src/background.ts` (manifest `background_url: "/background"`; Cloudflare 307s `.html` URLs to the extensionless path), runs while Torchlight is enabled in the room, panel open or not. It registers the "Light torch" token right-click menu and writes through `src/lightFromTokens.ts` (same permission rules as the panel). Keep it free of React imports; metadata keys live in `util/constants.ts` for that reason.
+A second page, `background.html` → `src/background.ts` (manifest `background_url: "/background"`; Cloudflare 307s `.html` URLs to the extensionless path), runs while Torchlight is enabled in the room, panel open or not. It registers the token right-click menu (Light torch / Light lantern / Cast Light) and writes through `src/lightFromTokens.ts` (same permission rules as the panel). Keep it free of React imports; metadata keys live in `util/constants.ts` for that reason.
 
 The plugin ID `"io.github.mattrogers13.torchlight"` is exported as `ID` from `src/components/util/constants.ts` and prefixes the room metadata key and broadcast channel.
 
@@ -114,8 +114,10 @@ Rules:
 - Every write bumps that doc's `rev`; incoming docs with a lower `rev` are ignored (late echoes of our own earlier writes). `resync()` forces past it after a failed save.
 - Room metadata is capped at 16kB total across all extensions. Limits in `LIMITS` (20 GM lights, 2 per player, 40-char names) keep us small; failed writes show an error and resync.
 - Burn-out alerts fire once per light, player lights included: the GM client detects them and sets `alerted` in the owning doc. A light that burned out while no GM panel was open alerts when a GM next opens it.
-- Players carry one light at a time (rules p.84, "extinguish all old light sources"): `replacePlayerLight` sets the current light aside (`setAside: true`: paused, keeps its time, shown as "Paused") and drops anything older. Set aside isn't out: no burn-out alert, and Resume all skips it. The UI says "pause"; the code says "set aside" to keep it distinct from an ordinary GM pause.
+- Players carry one light at a time (rules p.84, "extinguish all old light sources"): `replacePlayerLight` sets the current light aside (`setAside: "swap"`: paused, keeps its time, shown as "Paused") and drops anything older. Set aside isn't out: no burn-out alert, and Resume all skips it. The UI says "pause"; the code says "set aside" to keep it distinct from an ordinary GM pause.
 - Same rule per token (`replaceTokenLight`, `Light.tokenId`): a right-click on a token sets aside whatever is burning on it, the GM's or a player's.
+- `Light.source` is `torch` / `lantern` / `light-spell`; `SOURCES` in `lights.ts` holds label, range (30 / 60 / 30 ft) and minutes from the core rules. Old lights without a source read as torches.
+- GM "Put out…" sets checked lights aside with `setAside: "put-out"` (shown "Put out", keeps its time, Resume all skips it) and sends the `light-out` broadcast. Flames are pre-checked, Light spells not (rules p.110). "Remove all" clears the shared state and every player doc.
 - Known limitation: two writers editing the same doc at the same instant is last-write-wins.
 - GM notifications for player activity (lit / removed) come from the GM client diffing light ids against the previous render, not from a broadcast. Lights present at first load and the GM's own removals don't alert.
 

@@ -277,7 +277,7 @@ describe("Main (Torchlight)", () => {
       const light = await screen.findByText("Light");
       for (let i = 0; i < 4; i++) fireEvent.click(light);
       await waitFor(() => expect(mineStored()?.lights).toHaveLength(2));
-      expect(mineStored()!.lights.map((l) => l.setAside)).toEqual([true, false]);
+      expect(mineStored()!.lights.map((l) => !!l.setAside)).toEqual([true, false]);
       expect(screen.getByText("Paused")).toBeInTheDocument();
       expect(screen.getByText(/Lighting a new one pauses/)).toBeInTheDocument();
     });
@@ -288,7 +288,8 @@ describe("Main (Torchlight)", () => {
         [playerKey("me")]: { rev: 1, ownerName: "Kira", lights: [turnTorch(0)] },
       };
       const { unmount } = render(<Main player={true} />);
-      expect(await screen.findByText("Lantern")).toBeInTheDocument();
+      // "Lantern" is also a source option in the add form.
+      expect(await screen.findByText("Lantern", { selector: "li span" })).toBeInTheDocument();
       expect(screen.queryByLabelText("Remove Lantern")).not.toBeInTheDocument();
       unmount();
 
@@ -384,13 +385,13 @@ describe("Main (Torchlight)", () => {
     });
 
     it("tells the GM when a player swaps lights, without a false 'removed'", async () => {
-      const old = { ...turnTorch(0), id: "old", name: "Old torch", setAside: true };
+      const old = { ...turnTorch(0), id: "old", name: "Old torch", setAside: "swap" };
       const torch = { ...burnedOutTorch(false), id: "t1", endsAt: Date.now() + 60_000 };
       room.metadata = { [playerKey("p2")]: { rev: 1, ownerName: "Bo", lights: [old, torch] } };
       render(<Main player={false} />);
       expect(await screen.findByText("Old torch")).toBeInTheDocument();
       const lantern = { ...turnTorch(0), id: "new", name: "Bo's lantern" };
-      await addPlayerLight({ rev: 2, ownerName: "Bo", lights: [{ ...torch, setAside: true, endsAt: null }, lantern] });
+      await addPlayerLight({ rev: 2, ownerName: "Bo", lights: [{ ...torch, setAside: "swap", endsAt: null }, lantern] });
       expect(OBR.notification.show).toHaveBeenCalledWith("Bo lit Bo's lantern", "INFO");
       expect(OBR.notification.show).toHaveBeenCalledWith("Bo paused Kira's torch", "INFO");
       expect(OBR.notification.show).not.toHaveBeenCalledWith("Bo removed Old torch", "INFO");
@@ -399,12 +400,12 @@ describe("Main (Torchlight)", () => {
     it("Resume all doesn't relight a paused light", async () => {
       const paused = { ...burnedOutTorch(false), id: "p", name: "Paused", endsAt: null, remainingSec: 30 };
       room.metadata = {
-        [ROOM_KEY]: { lights: [paused, { ...paused, id: "s", name: "Gone", setAside: true }] },
+        [ROOM_KEY]: { lights: [paused, { ...paused, id: "s", name: "Gone", setAside: "swap" }] },
       };
       render(<Main player={false} />);
       fireEvent.click(await screen.findByText("Resume all"));
       await waitFor(() => expect(stored().lights[0].endsAt).not.toBeNull());
-      expect(stored().lights[1]).toMatchObject({ endsAt: null, setAside: true });
+      expect(stored().lights[1]).toMatchObject({ endsAt: null, setAside: "swap" });
     });
 
     it("doesn't alert the GM about their own removal of a player light", async () => {
@@ -415,4 +416,61 @@ describe("Main (Torchlight)", () => {
       expect(OBR.notification.show).not.toHaveBeenCalled();
     });
   });
+
+  describe("light sources and GM bulk actions", () => {
+    const burning = (id: string, name: string, source: string) => ({
+      ...burnedOutTorch(false), id, name, source, endsAt: Date.now() + 600_000,
+    });
+
+    it("adds a lantern with the source picker", async () => {
+      render(<Main player={false} />);
+      fireEvent.change(await screen.findByLabelText("Light source"), { target: { value: "lantern" } });
+      fireEvent.click(screen.getByText("Light"));
+      await waitFor(() => expect(stored().lights[0]).toMatchObject({ source: "lantern" }));
+    });
+
+    it("Put out pre-checks flames, not the Light spell, and alerts everyone", async () => {
+      room.metadata = {
+        [ROOM_KEY]: { lights: [burning("a", "Kira's torch", "torch"), burning("b", "Ash's Light spell", "light-spell")] },
+        [playerKey("p2")]: { rev: 1, ownerName: "Bo", lights: [burning("c", "Bo's lantern", "lantern")] },
+      };
+      render(<Main player={false} />);
+      fireEvent.click(await screen.findByText("Put out…"));
+      expect(screen.getByRole("checkbox", { name: /Kira's torch/ })).toBeChecked();
+      expect(screen.getByRole("checkbox", { name: /Bo's lantern/ })).toBeChecked();
+      expect(screen.getByRole("checkbox", { name: /Ash's Light spell/ })).not.toBeChecked();
+      fireEvent.click(screen.getByText("Put out 2"));
+
+      await waitFor(() => expect(stored().lights[0]).toMatchObject({ setAside: "put-out", endsAt: null }));
+      expect(stored().lights[1]).toMatchObject({ setAside: null });
+      expect(room.metadata[playerKey("p2")]).toMatchObject({ lights: [{ setAside: "put-out" }] });
+      expect(OBR.broadcast.sendMessage).toHaveBeenCalledWith(
+        LIGHT_OUT_CHANNEL, ["Kira's torch", "Bo's lantern"], { destination: "ALL" },
+      );
+      expect(screen.getAllByText("Put out").length).toBe(2);
+    });
+
+    it("Resume all leaves put-out lights out", async () => {
+      room.metadata = { [ROOM_KEY]: { lights: [{ ...burning("a", "T", "torch"), endsAt: null, setAside: "put-out" }, { ...burning("b", "U", "torch"), endsAt: null, remainingSec: 30 }] } };
+      render(<Main player={false} />);
+      fireEvent.click(await screen.findByText("Resume all"));
+      await waitFor(() => expect(stored().lights[1].endsAt).not.toBeNull());
+      expect(stored().lights[0]).toMatchObject({ endsAt: null, setAside: "put-out" });
+    });
+
+    it("Remove all needs a second click and clears players' lights too, without alerts", async () => {
+      room.metadata = {
+        [ROOM_KEY]: { lights: [burning("a", "Kira's torch", "torch")] },
+        [playerKey("p2")]: { rev: 1, ownerName: "Bo", lights: [burning("c", "Bo's lantern", "lantern")] },
+      };
+      render(<Main player={false} />);
+      fireEvent.click(await screen.findByText("Remove all"));
+      expect(stored().lights).toHaveLength(1);
+      fireEvent.click(screen.getByText("Yes, remove all"));
+      await waitFor(() => expect(stored().lights).toHaveLength(0));
+      expect(room.metadata[playerKey("p2")]).toMatchObject({ lights: [] });
+      expect(OBR.notification.show).not.toHaveBeenCalled();
+    });
+  });
 });
+
