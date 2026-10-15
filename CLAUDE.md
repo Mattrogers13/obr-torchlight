@@ -108,27 +108,14 @@ Route paths are defined in `src/components/util/constants.ts`.
 
 Timer logic is pure functions in `src/lights.ts` (every time calc takes `now`, epoch ms UTC). Real-time lights store `endsAt` while running and `remainingSec` while paused; remaining time is always computed from the clock, never by counting ticks, so throttled background tabs can't drift. `useNow` only re-renders the display once a second while a light is running.
 
-`src/hooks/useRoomState.ts` syncs two kinds of room metadata docs:
+`src/hooks/useRoomState.ts` syncs two room metadata docs: `${ID}/state` (GM-written shared state) and `${ID}/player/<playerId>` (each player's own, at most 2 lights). Full rules (sync, burn-outs, light states, GM actions): `docs/state-sync.md`. Invariants not to break:
 
-- `${ID}/state` (`RoomState`: GM `lights`, `showToPlayers`, `playersCanAdd`, `playersCanRemove`). Only GMs write it.
-- `${ID}/player/<playerId>` (`PlayerDoc`: `ownerName`, at most 2 `lights`: the current one and the one last paused). Each player writes only their own; GMs can write any. Separate keys so a player's write can't clobber a GM edit (each key is last-write-wins).
-
-Rules:
-
-- Room metadata is writable by any client and any extension, so everything read goes through `parseRoomState` / `parsePlayerDocs` (drops malformed lights and player ids, clamps numbers). Panel, token sync and right-click all use the same parsers. Keep it that way.
-- Player permissions are enforced client-side only (there's no server). A tampering client could write any key; acceptable for a game table, but don't build anything on the assumption it can't.
-- Every write stamps the doc with `writer` (a random id per panel; the right-click menu uses `menu-…`) and that writer's `seq`. The writer id is module-level (one per page load, survives panel remounts). An incoming doc is ignored if it is a late echo of our own older write (same writer, lower seq than our latest write to that doc), or if it is another writer's while one of our writes to that doc is still in flight (room events arrive in room order, so ours lands after and replaces it; taking theirs would build our next change on a state the room is about to drop). A failed save stops waiting for its echo. `rev` is still bumped but is informational. Anything that copies a doc before writing it (the menu) must restamp it, or the copy carries another client's stamp and that client discards it. `resync()` forces past all of this after a failed save. `apply` skips metadata changes that don't touch Torchlight's keys (`torchlightSignature`).
-- Room metadata is capped at 16kB total across all extensions. Limits in `LIMITS` (20 GM lights, 2 per player, 40-char names) keep us small; failed writes show an error and resync.
-- Burn-out alerts fire once per burn-out, player lights included, detected by the GM panel. GM lights get `alerted` in the shared state; players' lights are recorded as `burnKey`s in the shared state's `burnedOut` (`id#rearmed`, pruned and capped; `Light.rearmed` goes up whenever a burned-out light is re-armed by Reset, added time or an undone turn, so pausing or swapping a burned-out light never changes its key), so the GM never writes a player's doc just to mark a burn-out (that write could overwrite a light the player lit the same instant). The broadcast is sent once per burn-out even if recording it is retried. A light that burned out while no GM panel was open alerts when a GM next opens it.
-- Players carry one light at a time (rules p.84, "extinguish all old light sources"): `replacePlayerLight` sets the current light aside (`setAside: "swap"`: paused, keeps its time, shown as "Paused") and drops anything older. Set aside isn't out: no burn-out alert, and Resume all skips it. The UI says "pause"; the code says "set aside" to keep it distinct from an ordinary GM pause.
-- Same rule per token (`replaceTokenLight`, `Light.tokenId`): a right-click on a token sets aside whatever is burning on it, the GM's or a player's.
-- `Light.source` is `torch` / `lantern` / `light-spell`; `SOURCES` in `lights.ts` holds label, range (30 / 60 / 30 ft) and minutes from the core rules. Old lights without a source read as torches.
-- GM "Put out…" sets checked lights aside with `setAside: "put-out"` (shown "Put out", keeps its time, Resume all skips it) and sends the `light-out` broadcast. Flames are pre-checked, Light spells not (rules p.110). "Remove all" clears the shared state and every player doc.
-- Use `mapLights` (not `lights.map`) for edits: it returns the original array when nothing changed, which is what makes the no-write check below work.
-- `update` / `updatePlayer` / `updateLights` return a Promise<boolean> (saved or not) and skip the write when the change returns the same object. A failed burn-out mark retries after `BURN_OUT_RETRY_MS`, never immediately (a full room would otherwise loop).
-- Light changes go through `updateLights` (owner → change map), which writes every touched doc in ONE `setMetadata` call. GM actions across players (Remove all, Put out, Pause/Resume all, burn-out marking) must stay one write so they land all-or-nothing.
-- Known limitation: two writers editing the same doc at the same instant is last-write-wins.
-- GM notifications for player activity (lit / removed) come from the GM client diffing light ids against the previous render, not from a broadcast. Lights present at first load and the GM's own removals don't alert.
+- Everything read from room metadata goes through `parseRoomState` / `parsePlayerDocs`: any client or extension can write it.
+- Permissions are client-side only; a tampering client can write any key.
+- Staleness is by `writer`/`seq` stamps, never `rev`. Anything that copies a doc before writing it must restamp it.
+- Multi-player GM actions are one `updateLights` write. Edit with `mapLights`, not `.map`.
+- The GM never writes a player's doc just to mark a burn-out (`burnedOut` lives in shared state).
+- Room metadata is capped at 16 kB across all extensions.
 
 localStorage keys (per browser, not shared). Always go through `src/storage.ts` (`readLocal` / `writeLocal`): localStorage throws in Owlbear's iframe under strict privacy settings, and an unguarded read during render blanks the panel.
 
