@@ -134,10 +134,10 @@ describe("Main (Torchlight)", () => {
     expect(OBR.broadcast.sendMessage).not.toHaveBeenCalled();
   });
 
-  it("shows players the gif when lights are hidden", async () => {
+  it("shows players a placeholder when lights are hidden", async () => {
     room.metadata = { [ROOM_KEY]: { lights: [burnedOutTorch(true)], showToPlayers: false } };
     render(<Main player={true} />);
-    expect(await screen.findByText("Nothing to See Here")).toBeInTheDocument();
+    expect(await screen.findByText("Lights Hidden")).toBeInTheDocument();
   });
 
   it("shows players a read-only list and never writes or alerts", async () => {

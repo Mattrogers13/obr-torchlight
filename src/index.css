@@ -122,3 +122,18 @@ body {
 .text-theme-danger {
   color: var(--color-danger);
 }
+
+/* PlayerView torch */
+@keyframes torch-flicker {
+  0%, 100% { transform: scale(1) rotate(0deg); opacity: 1; }
+  25% { transform: scale(1.04, 0.97) rotate(-1.5deg); opacity: 0.9; }
+  50% { transform: scale(0.97, 1.03) rotate(1deg); opacity: 1; }
+  75% { transform: scale(1.02, 0.98) rotate(-0.5deg); opacity: 0.85; }
+}
+.torch-flicker {
+  transform-origin: 50% 90%;
+  animation: torch-flicker 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .torch-flicker { animation: none; }
+}
