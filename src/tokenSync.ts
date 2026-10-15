@@ -102,7 +102,13 @@ export interface BadgeState {
   id: string;
   attachedTo: string | undefined;
   source: LightSource | undefined;
+  image: string | undefined;
 }
+
+// PNG, not SVG: Chrome can't decode SVG into the canvas textures Owlbear
+// draws items with (createImageBitmap fails), so an SVG badge showed as a
+// black square there. Sources: art/badges/*.svg.
+export const badgeImage = (origin: string, source: LightSource) => `${origin}/img/badge-${source}.png`;
 
 export interface SyncPlan {
   apply: { tokenId: string; source: LightSource; saved: unknown }[];
@@ -122,6 +128,7 @@ export const planSync = (
   tokens: TokenState[],
   badges: BadgeState[],
   pxFor: (source: LightSource) => number,
+  imageFor: (source: LightSource) => string = () => "",
 ): SyncPlan => {
   const plan: SyncPlan = { apply: [], restore: [], addBadges: [], deleteBadges: [] };
   const present = new Set(tokens.map((t) => t.id));
@@ -140,11 +147,18 @@ export const planSync = (
     }
   }
 
-  // One badge per lit token, showing its source. Anything else goes.
+  // One badge per lit token, showing its source with the current image.
+  // Anything else goes (including badges with an outdated image).
   const kept = new Set<string>();
   for (const badge of badges) {
     const want = badge.attachedTo ? desired.get(badge.attachedTo) : undefined;
-    if (want && badge.source === want && !kept.has(badge.attachedTo!) && present.has(badge.attachedTo!)) {
+    if (
+      want &&
+      badge.source === want &&
+      badge.image === imageFor(want) &&
+      !kept.has(badge.attachedTo!) &&
+      present.has(badge.attachedTo!)
+    ) {
       kept.add(badge.attachedTo!);
     } else {
       plan.deleteBadges.push(badge.id);
@@ -190,10 +204,10 @@ const allLights = (metadata: Record<string, unknown>): OwnedLight[] => {
 
 const badge = (token: Item, source: LightSource, dpi: number): Image => {
   // About a third of a grid cell, at the token's top-right.
-  const size = 64;
+  const size = 128;
   const offset = (dpi / 2) * Math.max(token.scale.x, 0.5) * 0.75;
   return buildImage(
-    { width: size, height: size, mime: "image/svg+xml", url: `${window.location.origin}/img/badge-${source}.svg` },
+    { width: size, height: size, mime: "image/png", url: badgeImage(window.location.origin, source) },
     { dpi: size / 0.35, offset: { x: size / 2, y: size / 2 } },
   )
     .name(`${SOURCES[source].label} (Torchlight)`)
@@ -244,9 +258,11 @@ const syncOnce = async () => {
         id: b.id,
         attachedTo: b.attachedTo,
         source: typeof source === "string" && source in SOURCES ? (source as LightSource) : undefined,
+        image: b.type === "IMAGE" ? (b as Image).image.url : undefined,
       };
     }),
     pxFor,
+    (source) => badgeImage(window.location.origin, source),
   );
 
   const apply = new Map(plan.apply.map((a) => [a.tokenId, a]));

@@ -110,7 +110,7 @@ describe("planSync", () => {
     const plan = planSync(
       new Map(),
       [{ id: "a", dfLight: dfLight(900), marker: { saved: threeFoot, source: "torch" } }],
-      [{ id: "badge", attachedTo: "a", source: "torch" }],
+      [{ id: "badge", attachedTo: "a", source: "torch", image: "" }],
       px,
     );
     expect(plan.restore).toEqual([{ tokenId: "a", saved: threeFoot }]);
@@ -121,7 +121,7 @@ describe("planSync", () => {
     const plan = planSync(
       new Map([["a", "torch"]]),
       [{ id: "a", dfLight: dfLight(900), marker: { saved: threeFoot, source: "torch" } }],
-      [{ id: "badge", attachedTo: "a", source: "torch" }],
+      [{ id: "badge", attachedTo: "a", source: "torch", image: "" }],
       px,
     );
     expect(plan).toEqual({ apply: [], restore: [], addBadges: [], deleteBadges: [] });
@@ -131,7 +131,7 @@ describe("planSync", () => {
     const plan = planSync(
       new Map([["a", "lantern"]]),
       [{ id: "a", dfLight: dfLight(900), marker: { saved: threeFoot, source: "torch" } }],
-      [{ id: "badge", attachedTo: "a", source: "torch" }],
+      [{ id: "badge", attachedTo: "a", source: "torch", image: "" }],
       px,
     );
     expect(plan.apply).toEqual([{ tokenId: "a", source: "lantern", saved: threeFoot }]);
@@ -143,7 +143,7 @@ describe("planSync", () => {
     const plan = planSync(
       new Map([["a", "torch"]]),
       [{ id: "a", dfLight: threeFoot, marker: { saved: threeFoot, source: "torch" } }],
-      [{ id: "badge", attachedTo: "a", source: "torch" }],
+      [{ id: "badge", attachedTo: "a", source: "torch", image: "" }],
       px,
     );
     expect(plan.apply).toEqual([{ tokenId: "a", source: "torch", saved: threeFoot }]);
@@ -155,15 +155,28 @@ describe("planSync", () => {
       new Map([["a", "torch"]]),
       [{ id: "a", dfLight: dfLight(900), marker: { saved: null, source: "torch" } }],
       [
-        { id: "b1", attachedTo: "a", source: "torch" },
-        { id: "b2", attachedTo: "a", source: "torch" },
-        { id: "b3", attachedTo: "gone", source: "torch" },
-        { id: "b4", attachedTo: undefined, source: undefined },
+        { id: "b1", attachedTo: "a", source: "torch", image: "" },
+        { id: "b2", attachedTo: "a", source: "torch", image: "" },
+        { id: "b3", attachedTo: "gone", source: "torch", image: "" },
+        { id: "b4", attachedTo: undefined, source: undefined, image: undefined },
       ],
       px,
     );
     expect(plan.deleteBadges).toEqual(["b2", "b3", "b4"]);
     expect(plan.addBadges).toEqual([]);
+  });
+
+  it("replaces a badge whose image is outdated (the old SVG badges)", () => {
+    const imageFor = (source: string) => `https://x/img/badge-${source}.png`;
+    const plan = planSync(
+      new Map([["a", "torch"]]),
+      [{ id: "a", dfLight: dfLight(900), marker: { saved: null, source: "torch" } }],
+      [{ id: "old", attachedTo: "a", source: "torch", image: "https://x/img/badge-torch.svg" }],
+      px,
+      imageFor,
+    );
+    expect(plan.deleteBadges).toEqual(["old"]);
+    expect(plan.addBadges).toEqual([{ tokenId: "a", source: "torch" }]);
   });
 
   it("ignores lights whose token isn't in this scene", () => {
