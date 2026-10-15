@@ -1,5 +1,11 @@
 # Release Notes
 
+## Version 2026-10-14
+
+### Changes
+
+- Removed the crawling turns counter and random encounter roller; Torchlight now focuses on light sources
+
 ## Version 2026-10-12
 
 First Torchlight release (customized from Shadow Crawler).

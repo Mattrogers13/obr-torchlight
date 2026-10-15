@@ -1,11 +1,11 @@
 {
   "name": "Torchlight",
-  "version": "2026-10-12",
+  "version": "2026-10-14",
   "manifest_version": 1,
   "icon": "/img/logo.png",
   "author": "Matthew Rogers",
   "homepage_url": "https://github.com/Mattrogers13/obr-torchlight",
-  "description": "Torch timers, crawl turn counter and encounter roller for Shadowdark. Based on Shadow Crawler by Alvaro Cavalcanti.",
+  "description": "Torch and light source timers for Shadowdark, shared with your players. Based on Shadow Crawler by Alvaro Cavalcanti.",
   "action": {
     "title": "Torchlight",
     "icon": "/img/icon.svg",

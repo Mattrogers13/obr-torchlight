@@ -6,6 +6,13 @@ export interface ReleaseHighlight {
 
 export const releaseHighlights: ReleaseHighlight[] = [
   {
+    version: "2026-10-14",
+    date: "October 14, 2026",
+    highlights: [
+      "✂️ Removed the crawling turns counter and random encounter roller to keep Torchlight focused on light sources",
+    ]
+  },
+  {
     version: "2026-10-12",
     date: "October 12, 2026",
     highlights: [

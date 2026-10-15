@@ -23,9 +23,6 @@ export interface RoomState {
   rev: number;
   lights: Light[];
   showToPlayers: boolean;
-  crawlTurns: number;
-  encounterRoll: number | null;
-  encounterTurn: number;
 }
 
 export const LIMITS = {
@@ -35,7 +32,6 @@ export const LIMITS = {
   maxMinutes: 1440,
   minTurns: 1,
   maxTurns: 100,
-  maxCrawlTurns: 9999,
 };
 
 export const DEFAULT_MINUTES = 60;
@@ -45,9 +41,6 @@ export const emptyRoomState = (): RoomState => ({
   rev: 0,
   lights: [],
   showToPlayers: false,
-  crawlTurns: 0,
-  encounterRoll: null,
-  encounterTurn: 0,
 });
 
 const clampInt = (value: number, min: number, max: number) =>
@@ -213,10 +206,5 @@ export const parseRoomState = (raw: unknown): RoomState => {
   }
   if (finite(raw.rev) && raw.rev >= 0) state.rev = Math.floor(raw.rev);
   if (typeof raw.showToPlayers === "boolean") state.showToPlayers = raw.showToPlayers;
-  if (finite(raw.crawlTurns)) state.crawlTurns = clampInt(raw.crawlTurns, 0, LIMITS.maxCrawlTurns);
-  if (finite(raw.encounterRoll) && raw.encounterRoll >= 1 && raw.encounterRoll <= 6) {
-    state.encounterRoll = Math.round(raw.encounterRoll);
-  }
-  if (finite(raw.encounterTurn)) state.encounterTurn = clampInt(raw.encounterTurn, 0, LIMITS.maxCrawlTurns);
   return state;
 };

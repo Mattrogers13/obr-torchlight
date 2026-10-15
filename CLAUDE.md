@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Torchlight (a customized copy of Shadow Crawler by Alvaro Cavalcanti, MIT) is an Owlbear Rodeo extension for running the Crawling phase of the Shadowdark RPG. It's a React-based popover plugin that provides tools for GMs to track torch timers, crawling turns, and random encounters during dungeon crawling sessions.
+Torchlight (a customized copy of Shadow Crawler by Alvaro Cavalcanti, MIT) is an Owlbear Rodeo extension for running the Crawling phase of the Shadowdark RPG. It's a React-based popover plugin that tracks torch and light source timers (real-time or turns) during dungeon crawling sessions.
 
 Standalone repo (github.com/Mattrogers13/obr-torchlight), not a fork. Never pull from or PR to upstream `alvarocavalcanti/shadowcrawler`. Keep `LICENSE` and the credit lines (README, About, homepage, manifest).
 
@@ -98,7 +98,7 @@ Route paths are defined in `src/components/util/constants.ts`.
 
 Timer logic is pure functions in `src/lights.ts` (every time calc takes `now`, epoch ms UTC). Real-time lights store `endsAt` while running and `remainingSec` while paused; remaining time is always computed from the clock, never by counting ticks, so throttled background tabs can't drift. `useNow` only re-renders the display once a second while a light is running.
 
-`src/hooks/useRoomState.ts` syncs `RoomState` (`lights`, `showToPlayers`, `crawlTurns`, `encounterRoll`, `encounterTurn`) through OBR room metadata:
+`src/hooks/useRoomState.ts` syncs `RoomState` (`lights`, `showToPlayers`) through OBR room metadata:
 
 - Room metadata is writable by any client and any extension, so everything read goes through `parseRoomState` (drops malformed lights, clamps numbers). Keep it that way.
 - Only GMs write (`canWrite`); players get a read-only view.
