@@ -898,38 +898,40 @@ describe("Main (Torchlight)", () => {
   });
 
   describe("ninth review fixes", () => {
-    it("a normal save doesn't re-read the room", async () => {
+    it("a save costs one room re-read, no more", async () => {
       room.metadata = { [ROOM_KEY]: { lights: [turnTorch(0)] } };
       render(<Main player={false} />);
       fireEvent.click(await screen.findByTitle("Burn a turn"));
       await waitFor(() => expect(stored().lights[0]).toMatchObject({ turnsUsed: 1 }));
       await act(async () => {});
-      expect(OBR.room.getMetadata).toHaveBeenCalledTimes(1); // the initial load only
+      expect(OBR.room.getMetadata).toHaveBeenCalledTimes(2); // initial load + one re-read
     });
   });
 
-  describe("tenth review fixes", () => {
-    it("an event about some other doc doesn't trigger a re-read", async () => {
-      room.metadata = {
-        [ROOM_KEY]: { lights: [turnTorch(0)] },
-        [playerKey("p2")]: { ownerName: "Bo", lights: [] },
-      };
+  describe("eleventh review fixes", () => {
+    it("writes still bump rev, so panels on the previous build accept them", async () => {
+      room.metadata = { [ROOM_KEY]: { rev: 41, lights: [turnTorch(0)] } };
       render(<Main player={false} />);
-      const plus = await screen.findByTitle("Burn a turn");
-      room.deferWrites = true;
-      fireEvent.click(plus); // our shared-state write in flight
-      // A player's own doc changes meanwhile; the shared state in the event is
-      // the copy we already hold.
-      await act(async () => {
-        room.metadata = {
-          ...room.metadata,
-          [playerKey("p2")]: { writer: "p2w", seq: 1, ownerName: "Bo", lights: [{ ...turnTorch(0), id: "b", name: "Bo's torch" }] },
-        };
-        room.listeners.forEach((l) => l(room.metadata));
-      });
-      await flushWrite();
-      await act(async () => {});
-      expect(OBR.room.getMetadata).toHaveBeenCalledTimes(1); // initial load only
+      fireEvent.click(await screen.findByTitle("Burn a turn"));
+      await waitFor(() => expect(stored()).toMatchObject({ rev: 42 }));
+    });
+
+    it("a failed first load keeps the panel locked instead of letting an edit wipe the room", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        room.metadata = { [ROOM_KEY]: { lights: [turnTorch(4)] } };
+        vi.mocked(OBR.room.getMetadata).mockRejectedValueOnce(new Error("offline"));
+        render(<Main player={false} />);
+        expect(await screen.findByText("Loading…")).toBeInTheDocument();
+        expect(screen.queryByText("Light")).not.toBeInTheDocument(); // no add form to write with
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1500); // retry
+        });
+        expect(await screen.findByText("4 / 10")).toBeInTheDocument();
+        expect(OBR.room.setMetadata).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });
