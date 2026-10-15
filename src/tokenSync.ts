@@ -219,27 +219,39 @@ const badge = (token: Item, source: LightSource, dpi: number): Image => {
     .build();
 };
 
-const syncOnce = async () => {
-  if ((await OBR.player.getRole()) !== "GM") return;
-  if (!(await OBR.scene.isReady())) return;
+export const syncOnce = async () => {
+  // Two rounds of SDK calls (each a postMessage round trip), not eight in a
+  // row: the checks and metadata together, then everything that needs them.
+  const [role, ready, metadata] = await Promise.all([
+    OBR.player.getRole(),
+    OBR.scene.isReady(),
+    OBR.room.getMetadata(),
+  ]);
+  if (role !== "GM" || !ready) return;
 
-  const metadata = await OBR.room.getMetadata();
   const now = Date.now();
   const owned = allLights(metadata);
   const linked = new Set(owned.map((o) => o.light.tokenId).filter((id): id is string => !!id));
 
-  const tokens = await OBR.scene.items.getItems(
-    (item) => item.layer === "CHARACTER" && (linked.has(item.id) || item.metadata[TOKEN_KEY] !== undefined),
-  );
+  // One pass over the scene for both linked tokens and our badges.
+  const [items, permissions, dpi, scale] = await Promise.all([
+    OBR.scene.items.getItems(
+      (item) =>
+        item.metadata[BADGE_KEY] !== undefined ||
+        (item.layer === "CHARACTER" && (linked.has(item.id) || item.metadata[TOKEN_KEY] !== undefined)),
+    ),
+    OBR.room.getPermissions(),
+    OBR.scene.grid.getDpi(),
+    OBR.scene.grid.getScale(),
+  ]);
+  const badges = items.filter((item) => item.metadata[BADGE_KEY] !== undefined);
+  const tokens = items.filter((item) => item.metadata[BADGE_KEY] === undefined);
   const tokensById = new Map(tokens.map((t) => [t.id, t]));
-  const permissions = await OBR.room.getPermissions();
   const desired = desiredSources(
     owned,
     now,
     (tokenId, ownerId) => ownerId === null || playerMayLight(tokensById.get(tokenId), ownerId, permissions),
   );
-  const badges = await OBR.scene.items.getItems((item) => item.metadata[BADGE_KEY] !== undefined);
-  const [dpi, scale] = await Promise.all([OBR.scene.grid.getDpi(), OBR.scene.grid.getScale()]);
   const pxFor = (source: LightSource) =>
     rangePx(SOURCES[source].rangeFt, dpi, scale.parsed.unit, scale.parsed.multiplier);
 
