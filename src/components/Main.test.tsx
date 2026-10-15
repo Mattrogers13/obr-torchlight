@@ -338,4 +338,55 @@ describe("Main (Torchlight)", () => {
       expect(room.metadata[ROOM_KEY]).toBeUndefined();
     });
   });
+
+  describe("player activity alerts", () => {
+    const addPlayerLight = (doc: unknown) =>
+      act(async () => {
+        room.metadata = { ...room.metadata, [playerKey("p2")]: doc };
+        room.listeners.forEach((l) => l(room.metadata));
+      });
+
+    it("puts Pause all / Resume all at the top, above Light Sources", async () => {
+      room.metadata = { [ROOM_KEY]: { lights: [{ ...burnedOutTorch(false), endsAt: Date.now() + 60_000, alerted: false }] } };
+      render(<Main player={false} />);
+      const pause = await screen.findByText("Pause all");
+      const heading = screen.getByText("Light Sources");
+      expect(pause.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it("tells the GM when a player lights a torch, but not for lights already burning", async () => {
+      room.metadata = { [playerKey("p3")]: { rev: 1, ownerName: "Ash", lights: [{ ...turnTorch(0), id: "old" }] } };
+      render(<Main player={false} />);
+      expect(await screen.findByText("(Ash)")).toBeInTheDocument();
+      expect(OBR.notification.show).not.toHaveBeenCalled();
+
+      await addPlayerLight({ rev: 1, ownerName: "Bo", lights: [turnTorch(0)] });
+      expect(OBR.notification.show).toHaveBeenCalledWith("Bo lit Lantern", "INFO");
+    });
+
+    it("doesn't notify players about other players' lights", async () => {
+      room.metadata = { [ROOM_KEY]: { showToPlayers: true } };
+      render(<Main player={true} />);
+      expect(await screen.findByText("Light Sources")).toBeInTheDocument();
+      await addPlayerLight({ rev: 1, ownerName: "Bo", lights: [turnTorch(0)] });
+      expect(await screen.findByText("Lantern")).toBeInTheDocument();
+      expect(OBR.notification.show).not.toHaveBeenCalled();
+    });
+
+    it("tells the GM when a player removes their own light", async () => {
+      room.metadata = { [playerKey("p2")]: { rev: 1, ownerName: "Bo", lights: [turnTorch(0)] } };
+      render(<Main player={false} />);
+      expect(await screen.findByText("(Bo)")).toBeInTheDocument();
+      await addPlayerLight({ rev: 2, ownerName: "Bo", lights: [] });
+      expect(OBR.notification.show).toHaveBeenCalledWith("Bo removed Lantern", "INFO");
+    });
+
+    it("doesn't alert the GM about their own removal of a player light", async () => {
+      room.metadata = { [playerKey("p2")]: { rev: 1, ownerName: "Bo", lights: [turnTorch(0)] } };
+      render(<Main player={false} />);
+      fireEvent.click(await screen.findByLabelText("Remove Lantern"));
+      await waitFor(() => expect(room.metadata[playerKey("p2")]).toMatchObject({ lights: [] }));
+      expect(OBR.notification.show).not.toHaveBeenCalled();
+    });
+  });
 });
