@@ -77,6 +77,10 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
   // event overtook can be told apart.
   const lastSignature = useRef<string | null>(null);
   const applied = useRef(0);
+  // Holding back the room's copy only makes sense if we hold one. Until this
+  // mount has taken the shared state once (say it remounted mid-write), it
+  // takes the room's; the panel isn't loaded until it has.
+  const haveState = useRef(false);
 
   const apply = useCallback((metadata: Metadata, from: "event" | "snapshot") => {
     const signature = torchlightSignature(metadata);
@@ -89,7 +93,8 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
     const take = (key: string, doc: Stamp) => (from === "snapshot" ? !inFlight(key) : takeEvent(key, doc));
 
     const next = parseRoomState(metadata[ROOM_KEY]);
-    if (take(ROOM_KEY, next)) {
+    if (take(ROOM_KEY, next) || !haveState.current) {
+      haveState.current = true;
       latest.current = next;
       setState(next);
     }
@@ -111,7 +116,7 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
   // overtook is older than that event, so read again. Resolves true once a
   // read was applied.
   const mounted = useRef(true);
-  const resync = useCallback(async (): Promise<boolean> => {
+  const readOnce = useCallback(async (): Promise<boolean> => {
     for (let attempt = 0; attempt < 5 && mounted.current; attempt++) {
       const asked = applied.current;
       const metadata = await OBR.room.getMetadata();
@@ -124,33 +129,52 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
     return false;
   }, [apply]);
 
-  // Keeps trying until a read lands, backing off; tells the user once if the
-  // room can't be read. Until the first read lands the panel stays on
-  // "Loading…": an empty state written back would wipe the room's lights.
+  // One re-read loop at a time. Requests while it runs or waits just mark it
+  // to read again once more; failures back off up to 30 s and the user is
+  // told once. Until the first read lands the panel stays on "Loading…":
+  // unlocking with an empty state would let the next edit wipe the room.
+  const loop = useRef({ running: false, again: false, wait: 1000, told: false });
   const retry = useRef<ReturnType<typeof setTimeout>>();
-  const resyncUntilDone = useCallback(
-    (wait = 1000, told = false) => {
-      clearTimeout(retry.current);
-      resync()
-        .then((done) => {
-          if (done) setLoaded(true);
-          else if (mounted.current) retry.current = setTimeout(() => resyncUntilDone(wait, told), wait);
-        })
-        .catch((err) => {
-          if (!told) notify(`Torchlight couldn't load room state: ${errorMessage(err)}`, "ERROR");
-          if (mounted.current) {
-            retry.current = setTimeout(() => resyncUntilDone(Math.min(wait * 2, 30_000), true), wait);
-          }
-        });
-    },
-    [resync],
-  );
+  const requestResync = useCallback(() => {
+    const l = loop.current;
+    if (l.running) {
+      l.again = true;
+      return;
+    }
+    l.running = true;
+    l.again = false;
+    readOnce()
+      .then((done) => {
+        if (done) {
+          l.wait = 1000;
+          l.told = false;
+          if (haveState.current) setLoaded(true);
+        }
+        return done;
+      })
+      .catch((err) => {
+        if (!l.told) notify(`Torchlight couldn't load room state: ${errorMessage(err)}`, "ERROR");
+        l.told = true;
+        l.wait = Math.min(l.wait * 2, 30_000);
+        return false;
+      })
+      .then((done) => {
+        l.running = false;
+        if (!mounted.current) return;
+        if (!done) {
+          clearTimeout(retry.current);
+          retry.current = setTimeout(requestResync, l.wait);
+        } else if (l.again) {
+          requestResync();
+        }
+      });
+  }, [readOnce]);
 
   useEffect(() => {
     mounted.current = true;
-    const mine = () => resyncUntilDone();
+    const mine = () => requestResync();
     mountedResync = mine;
-    resyncUntilDone();
+    requestResync();
     const off = OBR.room.onMetadataChange((metadata) => apply(metadata, "event"));
     return () => {
       mounted.current = false;
@@ -158,7 +182,7 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
       if (mountedResync === mine) mountedResync = null;
       off();
     };
-  }, [apply, resyncUntilDone]);
+  }, [apply, requestResync]);
 
   // Resolves true once the write landed, false if it failed (the user is
   // told). Either way it settles and the room is re-read (rule 3).

@@ -17,3 +17,15 @@ export const notify = (
     console.error(`Torchlight notification failed: ${errorMessage(err)}`, message),
   );
 };
+
+// player.onChange fires on every selection change; call back only when the
+// role actually changes.
+export const onRoleChange = (callback: () => void) => {
+  let role: string | undefined;
+  return OBR.player.onChange((player) => {
+    if (player.role === role) return;
+    role = player.role;
+    callback();
+  });
+};
+

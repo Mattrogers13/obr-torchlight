@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { ROOM_KEY, playerKey } from "./constants";
 import {
   LIMITS,
   adjustTime,
@@ -16,6 +17,7 @@ import {
   SOURCES,
   burnKey,
   mapLights,
+  torchlightSignature,
   pruneBurnedOut,
   setAsideLight,
   remainingSec,
@@ -366,3 +368,15 @@ describe("burn-out record", () => {
   });
 });
 
+describe("torchlightSignature", () => {
+  it("ignores other extensions' metadata and key order", () => {
+    const ours = { [ROOM_KEY]: { rev: 1 }, [playerKey("p1")]: { rev: 2 } };
+    const a = torchlightSignature({ ...ours, "other.ext/x": 1 });
+    const b = torchlightSignature({ "other.ext/x": 99, [playerKey("p1")]: { rev: 2 }, [ROOM_KEY]: { rev: 1 } });
+    expect(a).toBe(b);
+  });
+
+  it("changes when our data changes", () => {
+    expect(torchlightSignature({ [ROOM_KEY]: { rev: 1 } })).not.toBe(torchlightSignature({ [ROOM_KEY]: { rev: 2 } }));
+  });
+});
