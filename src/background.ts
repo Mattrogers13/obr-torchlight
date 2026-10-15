@@ -2,12 +2,14 @@ import OBR, { ContextMenuItem, Metadata } from "@owlbear-rodeo/sdk";
 
 import { ID, ROOM_KEY } from "./components/util/constants";
 import { parseRoomState } from "./lights";
+import { startTokenSync } from "./tokenSync";
 import { errorMessage } from "./utils";
 
 // Runs whenever Torchlight is enabled in the room, panel open or not.
 // Adds one "Torchlight" entry to the right-click menu of character tokens;
 // it opens a small embedded submenu (menu.html / src/menu.ts) with the three
-// light sources.
+// light sources. On the GM's client it also keeps token lights in step with
+// the timers (tokenSync.ts).
 
 const MENU_ID = `${ID}/light-menu`;
 // Height of the embedded submenu: 3 rows of 36px plus 8px padding (menu.html).
@@ -53,5 +55,7 @@ OBR.onReady(async () => {
 
   safeSync();
   OBR.room.onMetadataChange(safeSync);
+  // GM only (checked inside): token lights and badges follow the timers.
+  startTokenSync();
   OBR.player.onChange(() => safeSync());
 });
