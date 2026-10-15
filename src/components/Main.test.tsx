@@ -354,11 +354,11 @@ describe("Main (Torchlight)", () => {
         [playerKey("p2")]: { rev: 1, ownerName: "Bo", lights: [burnedOutTorch(false)] },
       };
       render(<Main player={false} />);
-      await waitFor(() =>
-        expect(room.metadata[playerKey("p2")]).toMatchObject({ lights: [{ alerted: true }] }),
-      );
+      // Recorded in the GM's own doc; the player's doc is never written.
+      await waitFor(() => expect(stored()?.burnedOut).toHaveLength(1));
+      expect(stored().burnedOut).toEqual([`t1@${(room.metadata[playerKey("p2")] as { lights: { endsAt: number }[] }).lights[0].endsAt}`]);
+      expect(room.metadata[playerKey("p2")]).toMatchObject({ rev: 1, lights: [{ alerted: false }] });
       expect(OBR.broadcast.sendMessage).toHaveBeenCalledTimes(1);
-      expect(room.metadata[ROOM_KEY]).toBeUndefined();
     });
   });
 

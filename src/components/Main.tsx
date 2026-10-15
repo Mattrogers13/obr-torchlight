@@ -13,6 +13,7 @@ import {
   LightKind,
   adjustTime,
   adjustTurns,
+  burnKey,
   cleanName,
   createLight,
   isOut,
@@ -22,6 +23,7 @@ import {
   lightName,
   nextDefaultName,
   pause,
+  pruneBurnedOut,
   replacePlayerLight,
   reset,
   resume,
@@ -64,12 +66,21 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
       doc.lights.map((light) => ({ light, ownerId, ownerName: doc.ownerName })),
     ),
   ];
-  const anyRunning = entries.some((e) => isRunning(e.light));
+  // Tick only while something is actually counting down (a burned-out light
+  // still has an endsAt).
+  const anyRunning = entries.some((e) => isRunning(e.light) && !isOut(e.light, Date.now()));
   const now = useNow(anyRunning);
   // Burn-outs being marked: id -> earliest time to try again (Infinity while
   // the write is in flight). A failed write retries after a pause, so a full
   // room doesn't turn into a tight write/fail/resync loop.
   const alertsSent = useRef(new Map<string, number>());
+  // Burn-outs already broadcast this session (so a retried record doesn't
+  // alert everyone twice).
+  const broadcastSent = useRef(new Set<string>());
+  // Wakes the burn-out check for a retry; nothing else may be ticking then.
+  const [retryTick, setRetryTick] = useState(0);
+  const retryTimer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(retryTimer.current), []);
   const [activeOnly, toggleActiveOnly] = useActiveOnly();
   const activeFilter = (
     <label className="flex items-center gap-2 mb-3 text-sm text-theme-secondary">
@@ -140,30 +151,49 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
   ): Promise<boolean> =>
     updateLights(new Map([...new Set(owners)].map((owner) => [owner, change])));
 
-  // GM only: detect burn-out once per light, player lights included. The
-  // `alerted` flag in room state stops repeats across reloads; the ref covers
-  // the gap before the write lands. A light that burned out while no GM panel
-  // was open alerts on next open.
+  // GM only: detect burn-out once per light, player lights included, and
+  // announce it to everyone. The GM's own lights are marked `alerted` in the
+  // shared state; players' lights are recorded in `burnedOut` (also the
+  // shared state), so the GM never writes a player's doc for this. A light
+  // that burned out while no GM panel was open alerts on next open.
   useEffect(() => {
     if (player || !loaded) return;
-    for (const { light } of entries) {
-      if (!light.alerted && !isOut(light, now)) alertsSent.current.delete(light.id);
+    const recorded = new Set(state.burnedOut);
+    const announced = (e: Entry) =>
+      e.light.alerted || (e.ownerId !== null && recorded.has(burnKey(e.light)));
+    for (const e of entries) {
+      if (!isOut(e.light, now)) {
+        alertsSent.current.delete(e.light.id);
+        broadcastSent.current.delete(e.light.id);
+      }
     }
     const burnedOut = entries.filter(
-      ({ light: l }) => !l.alerted && isOut(l, now) && (alertsSent.current.get(l.id) ?? 0) <= Date.now(),
+      (e) => !announced(e) && isOut(e.light, now) && (alertsSent.current.get(e.light.id) ?? 0) <= Date.now(),
     );
     if (burnedOut.length === 0) return;
 
     const ids = new Set(burnedOut.map((e) => e.light.id));
     ids.forEach((id) => alertsSent.current.set(id, Infinity));
-    changeLights(
-      burnedOut.map((e) => e.ownerId),
-      (lights) => lights.map((l) => (ids.has(l.id) ? { ...pause(l, Date.now()), alerted: true } : l)),
-    ).then((saved) => {
-      // Not marked in the room, so try again on the next tick.
-      if (!saved) ids.forEach((id) => alertsSent.current.set(id, Date.now() + BURN_OUT_RETRY_MS));
+    const gmIds = new Set(burnedOut.filter((e) => e.ownerId === null).map((e) => e.light.id));
+    const keys = burnedOut.filter((e) => e.ownerId !== null).map((e) => burnKey(e.light));
+    const liveIds = new Set(entries.map((e) => e.light.id));
+    update((s) => ({
+      ...s,
+      lights: s.lights.map((l) => (gmIds.has(l.id) ? { ...pause(l, Date.now()), alerted: true } : l)),
+      burnedOut: keys.length > 0 ? pruneBurnedOut([...s.burnedOut, ...keys], liveIds) : s.burnedOut,
+    })).then((saved) => {
+      // Not recorded in the room: retry the record after a pause.
+      if (saved) return;
+      ids.forEach((id) => alertsSent.current.set(id, Date.now() + BURN_OUT_RETRY_MS));
+      clearTimeout(retryTimer.current);
+      retryTimer.current = setTimeout(() => setRetryTick((t) => t + 1), BURN_OUT_RETRY_MS);
     });
-    const names = burnedOut.map((e) => e.light.name);
+
+    // Announce once per burn-out, even if recording it has to be retried.
+    const fresh = burnedOut.filter((e) => !broadcastSent.current.has(e.light.id));
+    fresh.forEach((e) => broadcastSent.current.add(e.light.id));
+    const names = fresh.map((e) => e.light.name);
+    if (names.length === 0) return;
     OBR.broadcast
       .sendMessage(LIGHT_OUT_CHANNEL, names, { destination: "ALL" })
       .catch((err) =>
@@ -173,7 +203,7 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
           "WARNING",
         ),
       );
-  }, [player, loaded, state.lights, playerDocs, now, updateLights]);
+  }, [player, loaded, state.lights, state.burnedOut, playerDocs, now, update, retryTick]);
 
   const updateLight = (entry: Entry, change: (light: Light) => Light) =>
     changeLights([entry.ownerId], (lights) =>

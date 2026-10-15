@@ -47,6 +47,10 @@ export interface RoomState {
   // GM permission toggles for player-owned lights (see PlayerDoc).
   playersCanAdd: boolean;
   playersCanRemove: boolean;
+  // Burn-outs of players' lights already announced (see burnKey). Kept in the
+  // GM's own doc so the GM never has to write a player's doc just to mark
+  // a burn-out, which could overwrite a light the player lit that instant.
+  burnedOut: string[];
 }
 
 // A player's own lights. Each player writes only their own metadata key, so
@@ -64,6 +68,7 @@ export const LIMITS = {
   // lighting a new source extinguishes the old and starts a fresh timer).
   maxPlayerLights: 2,
   maxNameLength: 40,
+  maxBurnedOut: 100,
   minMinutes: 1,
   maxMinutes: 1440,
   minTurns: 1,
@@ -79,6 +84,7 @@ export const emptyRoomState = (): RoomState => ({
   showToPlayers: false,
   playersCanAdd: false,
   playersCanRemove: false,
+  burnedOut: [],
 });
 
 export const emptyPlayerDoc = (): PlayerDoc => ({ rev: 0, ownerName: "", lights: [] });
@@ -214,6 +220,16 @@ export const adjustTurns =(light: Light, delta: number): Light => {
   return { ...light, turnsUsed, alerted: turnsUsed < light.maxTurns ? false : light.alerted };
 };
 
+// Identifies one particular burn-out of a light. A time light that is
+// relit or given more time gets a new endsAt, so its next burn-out is a new
+// key and alerts again.
+export const burnKey = (light: Light) =>
+  light.kind === "time" ? `${light.id}@${light.endsAt ?? "p"}` : `${light.id}#${light.turnsUsed}`;
+
+// Keep only keys for lights that still exist, newest last, capped.
+export const pruneBurnedOut = (keys: string[], liveIds: Set<string>) =>
+  [...new Set(keys)].filter((k) => liveIds.has(k.split(/[@#]/)[0])).slice(-LIMITS.maxBurnedOut);
+
 export const formatClock = (seconds: number) => {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
@@ -307,6 +323,11 @@ export const parseRoomState = (raw: unknown): RoomState => {
   if (typeof raw.showToPlayers === "boolean") state.showToPlayers = raw.showToPlayers;
   if (typeof raw.playersCanAdd === "boolean") state.playersCanAdd = raw.playersCanAdd;
   if (typeof raw.playersCanRemove === "boolean") state.playersCanRemove = raw.playersCanRemove;
+  if (Array.isArray(raw.burnedOut)) {
+    state.burnedOut = raw.burnedOut
+      .filter((k): k is string => typeof k === "string" && k.length <= 120)
+      .slice(-LIMITS.maxBurnedOut);
+  }
   return state;
 };
 

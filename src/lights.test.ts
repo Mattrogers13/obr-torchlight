@@ -14,6 +14,8 @@ import {
   pause,
   replacePlayerLight,
   SOURCES,
+  burnKey,
+  pruneBurnedOut,
   setAsideLight,
   remainingSec,
   reset,
@@ -170,13 +172,13 @@ describe("parseRoomState (untrusted metadata)", () => {
   it("returns empty state for missing or non-object data", () => {
     for (const raw of [undefined, null, 42, "x", [], true]) {
       expect(parseRoomState(raw)).toEqual({
-        rev: 0, lights: [], showToPlayers: false, playersCanAdd: false, playersCanRemove: false,
+        rev: 0, lights: [], showToPlayers: false, playersCanAdd: false, playersCanRemove: false, burnedOut: [],
       });
     }
   });
 
   it("round-trips valid state", () => {
-    const state = { rev: 7, lights: [valid], showToPlayers: true, playersCanAdd: true, playersCanRemove: false };
+    const state = { rev: 7, lights: [valid], showToPlayers: true, playersCanAdd: true, playersCanRemove: false, burnedOut: ["x@1"] };
     expect(parseRoomState(JSON.parse(JSON.stringify(state)))).toEqual(state);
   });
 
@@ -317,6 +319,24 @@ describe("light sources (core rules)", () => {
     expect(remainingSec(out, T0 + 9e9)).toBe(3000);
     expect(parseRoomState({ lights: [out] }).lights[0].setAside).toBe("put-out");
     expect(parseRoomState({ lights: [{ ...lit, setAside: true }] }).lights[0].setAside).toBe("swap");
+  });
+});
+
+describe("burn-out record", () => {
+  it("keys a time light by its end time, so a relit light alerts again", () => {
+    const lit = createLight("a", "T", "time", 1, T0);
+    const relit = resume(pause(lit, T0 + 1000), T0 + 5000);
+    expect(burnKey(lit)).not.toBe(burnKey(relit));
+  });
+
+  it("prunes keys for lights that no longer exist and caps the list", () => {
+    expect(pruneBurnedOut(["a@1", "gone@2", "a@1", "b#3"], new Set(["a", "b"]))).toEqual(["a@1", "b#3"]);
+    const many = Array.from({ length: 150 }, (_, i) => `a@${i}`);
+    expect(pruneBurnedOut(many, new Set(["a"]))).toHaveLength(LIMITS.maxBurnedOut);
+  });
+
+  it("parses only short strings", () => {
+    expect(parseRoomState({ burnedOut: ["ok@1", 5, "x".repeat(200)] }).burnedOut).toEqual(["ok@1"]);
   });
 });
 
