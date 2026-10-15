@@ -116,6 +116,11 @@ localStorage keys (per browser, not shared):
 
 Cloudflare Workers static assets via Workers Builds. Push to `main` deploys https://torchlight.editbag.workers.dev; PR branches get `<branch>-torchlight.editbag.workers.dev` previews (URL posted as a PR comment).
 
+Two installs in Owlbear, each added once:
+
+- Live: `https://torchlight.editbag.workers.dev/manifest.json` (named "Torchlight")
+- Dev: `https://dev-torchlight.editbag.workers.dev/manifest.json` (the long-lived `dev` branch). Non-main builds rename the manifest to "Torchlight (Dev)" via `WORKERS_CI_BRANCH` (`src/devManifest.ts`, wired in `vite.config.js`).
+
 - `public/_headers` sets `Access-Control-Allow-Origin: *`. Required: OBR fetches the manifest cross-origin, and Workers send no CORS header by default.
 - `wrangler.jsonc` needs `"previews": {}` or `wrangler preview` (PR builds) fails. Previews don't apply the SPA fallback (deep links 404); production does.
 - Cloudflare build logs aren't reachable from here (the GitHub check has no log). Ask the user to download it from the dashboard.
@@ -124,6 +129,7 @@ Cloudflare Workers static assets via Workers Builds. Push to `main` deploys http
 ### Workflow
 
 - Branch + PR per change; squash-merge after CI and Workers Builds both pass. Features that need in-Owlbear testing stay open until the manual pass (`TESTING.md`).
+- To review in Owlbear, rebuild `dev` from main plus the open PR branches and force-push it: `git checkout -B dev origin/main && git merge --no-edit <branches...> && git push -f origin dev`. `dev` is disposable; never PR from it or merge it into main.
 - Versions are dates (`YYYY-MM-DD` in package.json and manifest.json) and drive the WhatsNew modal. Add matching entries to `src/releaseNotes.ts` and `RELEASE-NOTES.md`.
 
 ### Theming
