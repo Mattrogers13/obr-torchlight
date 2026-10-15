@@ -285,11 +285,10 @@ export const GmBulkActions: React.FC<{
   now: number;
   canPauseAll: boolean;
   canResumeAll: boolean;
-  onPauseAll: () => void;
-  onResumeAll: () => void;
+  onSetAllRunning: (running: boolean) => void;
   onPutOut: (ids: Set<string>) => void;
   onRemoveAll: () => void;
-}> = ({ entries, now, canPauseAll, canResumeAll, onPauseAll, onResumeAll, onPutOut, onRemoveAll }) => {
+}> = ({ entries, now, canPauseAll, canResumeAll, onSetAllRunning, onPutOut, onRemoveAll }) => {
   const [mode, setMode] = useState<"put-out" | "remove" | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const burning = entries.filter((e) => isActive(e.light, now));
@@ -312,11 +311,13 @@ export const GmBulkActions: React.FC<{
   return (
     <div className="mb-4">
       <div className="flex flex-wrap gap-2">
-        <button onClick={onPauseAll} disabled={!canPauseAll} className={`${small} bg-theme-secondary ${enabled(canPauseAll)}`}>
-          Pause all
-        </button>
-        <button onClick={onResumeAll} disabled={!canResumeAll} className={`${small} bg-theme-secondary ${enabled(canResumeAll)}`}>
-          Resume all
+        {/* One button: pauses while anything is running, otherwise resumes. */}
+        <button
+          onClick={() => onSetAllRunning(!canPauseAll)}
+          disabled={!canPauseAll && !canResumeAll}
+          className={`${small} bg-theme-secondary ${enabled(canPauseAll || canResumeAll)}`}
+        >
+          {canPauseAll ? "Pause all" : "Resume all"}
         </button>
         <button
           onClick={openPutOut}

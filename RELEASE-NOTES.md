@@ -1,5 +1,12 @@
 # Release Notes
 
+## Version 2026-10-15.6
+
+### Changes
+
+- "Active lights only" checkbox above the list (GM and players) hides paused, put-out and burned-out lights. Remembered per browser.
+- Pause all / Resume all is one button: it pauses while anything is running, otherwise resumes
+
 ## Version 2026-10-15.5
 
 ### Changes

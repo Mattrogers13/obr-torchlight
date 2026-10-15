@@ -488,5 +488,46 @@ describe("Main (Torchlight)", () => {
       expect(OBR.notification.show).not.toHaveBeenCalled();
     });
   });
+
+  describe("pause toggle and active filter", () => {
+    const running = (id: string, name: string) => ({
+      ...burnedOutTorch(false), id, name, endsAt: Date.now() + 600_000,
+    });
+
+    it("one button pauses everything, then resumes it", async () => {
+      room.metadata = { [ROOM_KEY]: { lights: [running("a", "Torch A")] } };
+      render(<Main player={false} />);
+      fireEvent.click(await screen.findByText("Pause all"));
+      await waitFor(() => expect(stored().lights[0].endsAt).toBeNull());
+      expect(screen.queryByText("Pause all")).not.toBeInTheDocument();
+      fireEvent.click(screen.getByText("Resume all"));
+      await waitFor(() => expect(stored().lights[0].endsAt).not.toBeNull());
+      expect(screen.getByText("Pause all")).toBeInTheDocument();
+    });
+
+    it("Active lights only hides paused, put-out and burned-out lights, and is remembered", async () => {
+      localStorage.removeItem("torchlight-active-only");
+      room.metadata = {
+        [ROOM_KEY]: {
+          lights: [
+            running("a", "Burning"),
+            { ...running("b", "Swapped"), endsAt: null, setAside: "swap" },
+            { ...running("c", "Blown"), endsAt: null, setAside: "put-out" },
+            { ...burnedOutTorch(true), id: "d", name: "Spent" },
+          ],
+        },
+      };
+      const { unmount } = render(<Main player={false} />);
+      fireEvent.click(await screen.findByLabelText("Active lights only"));
+      expect(screen.getByText("Burning")).toBeInTheDocument();
+      for (const gone of ["Swapped", "Blown", "Spent"]) {
+        expect(screen.queryByText(gone)).not.toBeInTheDocument();
+      }
+      unmount();
+      render(<Main player={false} />);
+      expect(await screen.findByLabelText("Active lights only")).toBeChecked();
+      localStorage.removeItem("torchlight-active-only");
+    });
+  });
 });
 
