@@ -8,6 +8,8 @@ Torchlight (a customized copy of Shadow Crawler by Alvaro Cavalcanti, MIT) is an
 
 Standalone repo (github.com/Mattrogers13/obr-torchlight), not a fork. Never pull from or PR to upstream `alvarocavalcanti/shadowcrawler`. Keep `LICENSE` and the credit lines (README, About, homepage, manifest). Keep the "Coded with AI (Claude Code)" line in README, About and homepage.
 
+`sources/` (gitignored, local only) holds reference material: the Shadowdark core rules PDF (`sources/PDF/`, copyrighted, never commit it) and upstream Shadow Crawler build logs. Light source rules are on pp. 34, 64 and 84.
+
 ## Development Commands
 
 ```bash
