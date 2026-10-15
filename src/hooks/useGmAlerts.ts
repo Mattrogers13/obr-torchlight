@@ -87,7 +87,8 @@ export const useGmAlerts = ({
   // burnKeys in the shared state's `burnedOut`, so the GM never writes a
   // player's doc for this. A light that burned out while no GM panel was
   // open alerts on next open.
-  // In-flight/failed records: id -> earliest retry time (Infinity in flight).
+  // Records in flight or recently tried: id -> earliest time to try again
+  // (Infinity while the write is in flight).
   const recording = useRef(new Map<string, number>());
   // Burn-outs already broadcast this session (a retried record mustn't re-alert).
   const broadcast = useRef(new Set<string>());
@@ -122,8 +123,12 @@ export const useGmAlerts = ({
       const burned = keys.length > 0 ? pruneBurnedOut([...s.burnedOut, ...keys], liveIds) : s.burnedOut;
       return lights === s.lights && burned === s.burnedOut ? s : { ...s, lights, burnedOut: burned };
     }).then((saved) => {
-      if (saved) return;
-      // Not recorded in the room: retry after a pause, never in a tight loop.
+      if (saved) {
+        // Recorded; the broadcast won't repeat either way (see `broadcast`).
+      }
+      // Saved or not, check again after a pause (never in a tight loop): a
+      // failed record is retried, and a saved one that another writer
+      // overwrote is put back.
       ids.forEach((id) => recording.current.set(id, Date.now() + BURN_OUT_RETRY_MS));
       clearTimeout(retryTimer.current);
       retryTimer.current = setTimeout(() => setRetryTick((t) => t + 1), BURN_OUT_RETRY_MS);

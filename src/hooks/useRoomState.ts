@@ -10,6 +10,7 @@ import {
   emptyRoomState,
   parsePlayerDocs,
   parseRoomState,
+  torchlightSignature,
 } from "../lights";
 import { errorMessage, notify } from "../utils";
 
@@ -31,12 +32,32 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
   const latest = useRef<RoomState>(state);
   const latestDocs = useRef<PlayerDocs>(playerDocs);
 
-  // Change events can arrive after newer local writes (late echoes of our own
-  // earlier writes), so ignore anything older than what we hold unless forced.
-  // Each doc has its own rev.
+  // Who we are as a writer, and the seq of our latest write to each doc.
+  const writerId = useRef(crypto.randomUUID().slice(0, 8));
+  const seq = useRef(0);
+  const ourLatest = useRef(new Map<string, number>());
+  const stamp = (key: string) => {
+    seq.current += 1;
+    ourLatest.current.set(key, seq.current);
+    return { writer: writerId.current, seq: seq.current };
+  };
+  // A late echo of our own older write to this doc. Anything written by
+  // someone else (another GM, the right-click menu, a player) is current
+  // room state, whatever its rev, so it's never treated as stale.
+  const isOwnStaleEcho = (key: string, doc: { writer: string; seq: number }) =>
+    doc.writer === writerId.current && doc.seq < (ourLatest.current.get(key) ?? 0);
+
+  // Room metadata is shared with every extension; skip changes that didn't
+  // touch Torchlight's keys.
+  const lastSignature = useRef<string | null>(null);
+
   const apply = useCallback((metadata: Metadata, force = false) => {
+    const signature = torchlightSignature(metadata);
+    if (!force && signature === lastSignature.current) return;
+    lastSignature.current = signature;
+
     const next = parseRoomState(metadata[ROOM_KEY]);
-    if (force || next.rev >= latest.current.rev) {
+    if (force || !isOwnStaleEcho(ROOM_KEY, next)) {
       latest.current = next;
       setState(next);
     }
@@ -44,7 +65,7 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
     const docs: PlayerDocs = {};
     for (const [id, doc] of Object.entries(incoming)) {
       const held = latestDocs.current[id];
-      docs[id] = !force && held && doc.rev < held.rev ? held : doc;
+      docs[id] = !force && held && isOwnStaleEcho(playerKey(id), doc) ? held : doc;
     }
     latestDocs.current = docs;
     setPlayerDocs(docs);
@@ -89,7 +110,7 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
       if (!gm) return Promise.resolve(false);
       const changed = change(latest.current);
       if (changed === latest.current) return Promise.resolve(true);
-      const next = { ...changed, rev: latest.current.rev + 1 };
+      const next = { ...changed, rev: latest.current.rev + 1, ...stamp(ROOM_KEY) };
       latest.current = next;
       setState(next);
       return save({ [ROOM_KEY]: next });
@@ -103,7 +124,7 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
       const current = latestDocs.current[id] ?? emptyPlayerDoc();
       const changed = change(current);
       if (changed === current) return Promise.resolve(true);
-      const next = { ...changed, rev: current.rev + 1 };
+      const next = { ...changed, rev: current.rev + 1, ...stamp(playerKey(id)) };
       latestDocs.current = { ...latestDocs.current, [id]: next };
       setPlayerDocs(latestDocs.current);
       return save({ [playerKey(id)]: next });
@@ -123,7 +144,7 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
           if (!gm) continue;
           const lights = change(latest.current.lights);
           if (lights === latest.current.lights) continue;
-          const next = { ...latest.current, lights, rev: latest.current.rev + 1 };
+          const next = { ...latest.current, lights, rev: latest.current.rev + 1, ...stamp(ROOM_KEY) };
           latest.current = next;
           write[ROOM_KEY] = next;
         } else {
@@ -131,7 +152,7 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
           const current = latestDocs.current[owner] ?? emptyPlayerDoc();
           const lights = change(current.lights);
           if (lights === current.lights) continue;
-          const next = { ...current, lights, rev: current.rev + 1 };
+          const next = { ...current, lights, rev: current.rev + 1, ...stamp(playerKey(owner)) };
           latestDocs.current = { ...latestDocs.current, [owner]: next };
           write[playerKey(owner)] = next;
         }
