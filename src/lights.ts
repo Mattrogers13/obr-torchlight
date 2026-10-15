@@ -42,9 +42,9 @@ export interface Light {
   tokenId: string | null;
 }
 
-// Every doc records who wrote it last (a random id per panel) and that
-// writer's sequence number, so a client can tell a late echo of its own
-// older write (ignore) from anyone else's write (always current).
+// Every doc records who wrote it last (a random id per page load, or
+// "menu-…" for the right-click menu) and that writer's sequence number. See
+// takeIncoming in useRoomState for how clients use it.
 export interface Stamp {
   writer: string;
   seq: number;

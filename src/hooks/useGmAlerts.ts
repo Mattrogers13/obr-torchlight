@@ -107,7 +107,8 @@ export const useGmAlerts = ({
         recording.current.delete(e.light.id);
         broadcast.current.delete(e.light.id);
       } else if (announced(e) && recording.current.get(e.light.id) === Infinity) {
-        // Our record landed; if someone overwrites it, it's redone next time.
+        // Recorded (optimistically or in the room): drop the in-flight mark so
+        // an overwritten record is redone on the next change.
         recording.current.delete(e.light.id);
       }
     }
@@ -126,8 +127,9 @@ export const useGmAlerts = ({
       const burned = keys.length > 0 ? pruneBurnedOut([...s.burnedOut, ...keys], liveIds) : s.burnedOut;
       return lights === s.lights && burned === s.burnedOut ? s : { ...s, lights, burnedOut: burned };
     }).then((saved) => {
-      // Saved: the in-flight mark stays until the record shows up in the room
-      // (cleared above), so an overwritten record is redone on the next change.
+      // Saved: nothing to do. (The write applies locally at once, so the mark
+      // is already cleared on the next render; if another writer overwrites
+      // the record later, it's redone on that change.)
       if (saved) return;
       // Failed: retry after a pause, never in a tight loop.
       ids.forEach((id) => recording.current.set(id, Date.now() + BURN_OUT_RETRY_MS));

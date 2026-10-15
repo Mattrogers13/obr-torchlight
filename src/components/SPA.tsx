@@ -33,16 +33,20 @@ export default function SPA() {
       .getTheme()
       .then((theme) => setTheme(theme.mode.toLowerCase()))
       .catch(() => {}); // keep the default theme
-    // Without a role nothing renders, so a failed lookup retries, but only
-    // while we're still mounted.
+    // Without a role nothing renders, so a failed lookup retries (backing off
+    // to 30 s), but only while we're still mounted.
     let alive = true;
     let retry: ReturnType<typeof setTimeout> | undefined;
+    let wait = 2000;
     const loadRole = () =>
       OBR.player
         .getRole()
         .then((r) => alive && setRole(r))
-        .catch(() => {
-          if (alive) retry = setTimeout(loadRole, 2000);
+        .catch((err) => {
+          console.warn(`Torchlight couldn't get the player role, retrying: ${err}`);
+          if (!alive) return;
+          retry = setTimeout(loadRole, wait);
+          wait = Math.min(wait * 2, 30_000);
         });
     loadRole();
     const offTheme = OBR.theme.onChange((theme) => setTheme(theme.mode.toLowerCase()));

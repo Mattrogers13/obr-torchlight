@@ -83,7 +83,10 @@ OBR.onReady(async () => {
   // changes (player.onChange fires on every click) don't.
   let lastAllowFlag: boolean | null = null;
   OBR.room.onMetadataChange((metadata) => {
-    const flag = parseRoomState(metadata[ROOM_KEY]).playersCanAdd;
+    // Just the one flag (parseRoomState would parse every light, on every
+    // extension's write, to read it).
+    const raw = metadata[ROOM_KEY];
+    const flag = typeof raw === "object" && raw !== null && (raw as { playersCanAdd?: unknown }).playersCanAdd === true;
     if (flag === lastAllowFlag) return;
     lastAllowFlag = flag;
     requestSync();
