@@ -1,6 +1,6 @@
 import OBR, { Metadata } from "@owlbear-rodeo/sdk";
 
-import { PLAYER_KEY_PREFIX, ROOM_KEY, playerKey } from "./components/util/constants";
+import { ROOM_KEY, playerKey } from "./components/util/constants";
 import {
   LIMITS,
   Light,
@@ -11,6 +11,7 @@ import {
   isActive,
   lightName,
   parsePlayerDoc,
+  parsePlayerDocs,
   parseRoomState,
   replacePlayerLight,
   replaceTokenLight,
@@ -71,13 +72,11 @@ export const lightFromTokens = async (
     // A player may already have a light burning on one of these tokens.
     const tokenIds = new Set(tokens.map((t) => t.id));
     const update: Metadata = { [ROOM_KEY]: { ...state, lights, rev: state.rev + 1 } };
-    for (const [key, value] of Object.entries(metadata)) {
-      if (!key.startsWith(PLAYER_KEY_PREFIX)) continue;
-      const doc = parsePlayerDoc(value);
+    for (const [ownerId, doc] of Object.entries(parsePlayerDocs(metadata))) {
       const hit = doc.lights.filter((l) => l.tokenId && tokenIds.has(l.tokenId) && isActive(l, now));
       if (hit.length === 0) continue;
       hit.forEach((l) => paused.push(l.name));
-      update[key] = {
+      update[playerKey(ownerId)] = {
         ...doc,
         lights: doc.lights.map((l) => (hit.includes(l) ? setAsideLight(l, now) : l)),
         rev: doc.rev + 1,

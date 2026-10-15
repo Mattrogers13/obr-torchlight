@@ -1,4 +1,4 @@
-import OBR, { ContextMenuItem, Metadata } from "@owlbear-rodeo/sdk";
+import OBR, { ContextMenuItem } from "@owlbear-rodeo/sdk";
 
 import { ID, ROOM_KEY } from "./components/util/constants";
 import { parseRoomState } from "./lights";
@@ -34,28 +34,46 @@ const MENU: ContextMenuItem = {
 };
 
 OBR.onReady(async () => {
+  // What Owlbear currently has. Only updated after create/remove succeeds,
+  // so a failed call is retried on the next change instead of sticking.
   let shown: boolean | null = null;
 
-  const sync = async (metadata?: Metadata) => {
+  const sync = async () => {
     const gm = (await OBR.player.getRole()) === "GM";
     // Players only get the menu while the GM allows player lights.
-    const allowed =
-      gm || parseRoomState((metadata ?? (await OBR.room.getMetadata()))[ROOM_KEY]).playersCanAdd;
+    const allowed = gm || parseRoomState((await OBR.room.getMetadata())[ROOM_KEY]).playersCanAdd;
     if (allowed === shown) return;
+    if (allowed) await OBR.contextMenu.create(MENU);
+    else await OBR.contextMenu.remove(MENU_ID);
     shown = allowed;
-    if (!allowed) {
-      await OBR.contextMenu.remove(MENU_ID);
-      return;
-    }
-    await OBR.contextMenu.create(MENU);
   };
 
-  const safeSync = (metadata?: Metadata) =>
-    sync(metadata).catch((err) => console.error(`Torchlight menu sync failed: ${errorMessage(err)}`));
+  // One sync at a time; changes that arrive meanwhile collapse into one rerun
+  // that reads fresh state, so out-of-order results can't win.
+  let running = false;
+  let pending = false;
+  const requestSync = async () => {
+    if (running) {
+      pending = true;
+      return;
+    }
+    running = true;
+    try {
+      do {
+        pending = false;
+        await sync().catch((err) => {
+          shown = null;
+          console.error(`Torchlight menu sync failed: ${errorMessage(err)}`);
+        });
+      } while (pending);
+    } finally {
+      running = false;
+    }
+  };
 
-  safeSync();
-  OBR.room.onMetadataChange(safeSync);
+  requestSync();
+  OBR.room.onMetadataChange(() => requestSync());
+  OBR.player.onChange(() => requestSync());
   // GM only (checked inside): token lights and badges follow the timers.
   startTokenSync();
-  OBR.player.onChange(() => safeSync());
 });

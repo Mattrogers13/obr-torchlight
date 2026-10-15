@@ -292,6 +292,8 @@ export const GmBulkActions: React.FC<{
   const [mode, setMode] = useState<"put-out" | "remove" | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const burning = entries.filter((e) => isActive(e.light, now));
+  // Checked lights that are still burning (one may go out while the list is open).
+  const toPutOut = new Set(burning.map((e) => e.light.id).filter((id) => checked.has(id)));
   if (entries.length === 0) return null;
 
   const small = "px-2 py-1 text-sm text-white rounded transition-colors";
@@ -354,13 +356,13 @@ export const GmBulkActions: React.FC<{
           <div className="flex gap-2">
             <button
               onClick={() => {
-                onPutOut(checked);
+                onPutOut(toPutOut);
                 setMode(null);
               }}
-              disabled={checked.size === 0}
-              className={`${small} bg-theme-danger ${enabled(checked.size > 0)}`}
+              disabled={toPutOut.size === 0}
+              className={`${small} bg-theme-danger ${enabled(toPutOut.size > 0)}`}
             >
-              Put out {checked.size}
+              Put out {toPutOut.size}
             </button>
             <button onClick={() => setMode(null)} className={`${small} bg-theme-secondary`}>
               Cancel

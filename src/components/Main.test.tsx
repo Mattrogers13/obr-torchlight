@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, renderHook, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import OBR from "@owlbear-rodeo/sdk";
 
-import Main, { LIGHT_OUT_CHANNEL } from "./Main";
+import Main, { BURN_OUT_RETRY_MS, LIGHT_OUT_CHANNEL } from "./Main";
 import { ROOM_KEY, playerKey, useRoomState } from "../hooks/useRoomState";
 import type { Light } from "../lights";
 
@@ -185,7 +185,9 @@ describe("Main (Torchlight)", () => {
   it("refuses writes from a read-only (player) client", async () => {
     const { result } = renderHook(() => useRoomState({ gm: false, playerId: "me" }));
     await waitFor(() => expect(result.current.loaded).toBe(true));
-    act(() => result.current.update((st) => ({ ...st, showToPlayers: true })));
+    act(() => {
+      result.current.update((st) => ({ ...st, showToPlayers: true }));
+    });
     expect(OBR.room.setMetadata).not.toHaveBeenCalled();
     expect(result.current.state.showToPlayers).toBe(false);
   });
@@ -329,7 +331,9 @@ describe("Main (Torchlight)", () => {
     it("player hook refuses to write someone else's key", async () => {
       const { result } = renderHook(() => useRoomState({ gm: false, playerId: "me" }));
       await waitFor(() => expect(result.current.loaded).toBe(true));
-      act(() => result.current.updatePlayer("someone-else", (d) => ({ ...d, lights: [] })));
+      act(() => {
+        result.current.updatePlayer("someone-else", (d) => ({ ...d, lights: [] }));
+      });
       expect(OBR.room.setMetadata).not.toHaveBeenCalled();
     });
 
@@ -575,6 +579,78 @@ describe("Main (Torchlight)", () => {
       expect(await screen.findByText("Bo's torch")).toBeInTheDocument();
       expect(screen.getByText("Ash's torch")).toBeInTheDocument();
       expect(screen.getByText("GM torch")).toBeInTheDocument();
+    });
+  });
+
+  describe("review fixes", () => {
+    const lit = (id: string, name: string, extra: Record<string, unknown> = {}) => ({
+      ...burnedOutTorch(false), id, name, endsAt: Date.now() + 600_000, ...extra,
+    });
+    const pushRoom = (metadata: Record<string, unknown>) =>
+      act(async () => {
+        room.metadata = metadata;
+        room.listeners.forEach((l) => l(room.metadata));
+      });
+
+    it("doesn't tell the GM a player paused a light when the GM's right-click did it", async () => {
+      room.metadata = { [playerKey("p2")]: { rev: 1, ownerName: "Kira", lights: [lit("k", "Kira's torch")] } };
+      render(<Main player={false} />);
+      expect(await screen.findByText("(Kira)")).toBeInTheDocument();
+      // The GM's menu set the player's light aside and lit a new one in the GM's own state.
+      await pushRoom({
+        [ROOM_KEY]: { rev: 1, lights: [lit("g", "Kira's lantern", { source: "lantern" })] },
+        [playerKey("p2")]: { rev: 2, ownerName: "Kira", lights: [lit("k", "Kira's torch", { setAside: "swap", endsAt: null })] },
+      });
+      expect(OBR.notification.show).not.toHaveBeenCalledWith("Kira paused Kira's torch", "INFO");
+    });
+
+    it("retries a failed burn-out mark after a pause, not in a tight loop", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        room.metadata = { [ROOM_KEY]: { lights: [burnedOutTorch(false)] } };
+        room.failWrites = true;
+        render(<Main player={false} />);
+        await waitFor(() =>
+          expect(OBR.notification.show).toHaveBeenCalledWith("Torchlight couldn't save: Metadata too large", "ERROR"),
+        );
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(3000);
+        });
+        // Still failing, but only the one attempt so far.
+        expect(OBR.room.setMetadata).toHaveBeenCalledTimes(1);
+        room.failWrites = false;
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(BURN_OUT_RETRY_MS);
+        });
+        await waitFor(() => expect(stored().lights[0].alerted).toBe(true));
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("a failed Remove all doesn't mute a later 'removed' alert", async () => {
+      room.metadata = { [playerKey("p2")]: { rev: 1, ownerName: "Bo", lights: [lit("b", "Bo's torch")] } };
+      room.failWrites = true;
+      render(<Main player={false} />);
+      fireEvent.click(await screen.findByText("Remove all"));
+      fireEvent.click(screen.getByText("Yes, remove all"));
+      await waitFor(() =>
+        expect(OBR.notification.show).toHaveBeenCalledWith("Torchlight couldn't save: Metadata too large", "ERROR"),
+      );
+      expect(await screen.findByText("Bo's torch")).toBeInTheDocument();
+      room.failWrites = false;
+      await pushRoom({ [playerKey("p2")]: { rev: 2, ownerName: "Bo", lights: [] } });
+      expect(OBR.notification.show).toHaveBeenCalledWith("Bo removed Bo's torch", "INFO");
+    });
+
+    it("a change that changes nothing writes nothing", async () => {
+      const { result } = renderHook(() => useRoomState({ gm: true, playerId: "me" }));
+      await waitFor(() => expect(result.current.loaded).toBe(true));
+      await act(async () => {
+        await result.current.update((s) => s);
+        await result.current.updateLights(new Map([[null, (lights) => lights]]));
+      });
+      expect(OBR.room.setMetadata).not.toHaveBeenCalled();
     });
   });
 });
