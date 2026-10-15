@@ -58,7 +58,7 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
   const now = useNow(anyRunning);
   const alertsSent = useRef(new Set<string>());
 
-  // GM only: tell the GM about everything players do (light, snuff or
+  // GM only: tell the GM about everything players do (light, pause or
   // remove a light), by diffing the room's lights against the last render.
   // Lights already burning when the panel opens don't count, nor do the GM's
   // own removals, nor the old light dropped when a player lights a new one.
@@ -77,8 +77,8 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
       if (!before) {
         litBy.add(e.ownerId);
         notify(`${e.ownerName || "A player"} lit ${e.light.name}`, "INFO");
-      } else if (e.light.snuffed && !before.light.snuffed) {
-        notify(`${e.ownerName || "A player"} snuffed ${e.light.name}`, "INFO");
+      } else if (e.light.setAside && !before.light.setAside) {
+        notify(`${e.ownerName || "A player"} paused ${e.light.name}`, "INFO");
       }
     }
     for (const [id, e] of previous) {
@@ -184,9 +184,9 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
     const t = Date.now();
     const owners = new Set(entries.filter((e) => e.light.kind === "time").map((e) => e.ownerId));
     owners.forEach((ownerId) =>
-      // Resume all never relights a snuffed light.
+      // Resume all never relights a paused light.
       changeLights(ownerId, (lights) =>
-        lights.map((l) => (running ? (l.snuffed ? l : resume(l, t)) : pause(l, t))),
+        lights.map((l) => (running ? (l.setAside ? l : resume(l, t)) : pause(l, t))),
       ),
     );
   };
@@ -202,7 +202,7 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
       return <PlayerView />;
     }
     const ownName = myName ? `${myName}'s torch` : "Torch";
-    // One light at a time: lighting a new one snuffs the current one.
+    // One light at a time: lighting a new one pauses the current one.
     const addOwnLight = (name: string, kind: LightKind, amount: number) =>
       updatePlayer(myId, (d) => {
         if (!state.playersCanAdd) return d;
@@ -230,7 +230,7 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
                 <AddLightForm defaultName={ownName} disabled={false} onAdd={addOwnLight} />
                 {burning && (
                   <p className="-mt-2 mb-4 text-sm text-theme-secondary">
-                    Lighting a new one snuffs {burning.name}.
+                    Lighting a new one pauses {burning.name}.
                   </p>
                 )}
               </>

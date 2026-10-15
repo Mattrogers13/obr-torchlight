@@ -4,9 +4,10 @@
 
 ### Changes
 
-- Players carry one light at a time, per the core rules (p.84, "extinguish all old light sources, start a new timer"). Lighting a new one, from the panel or a token's right-click, snuffs the current light. Their list keeps two: the current light and the one last snuffed. This replaces the 3-per-player cap.
-- Snuffed lights are paused, keep their remaining time and show "Snuffed". They don't trigger a burn-out alert, and Resume all skips them. The GM can still relight one with its play button.
-- GM gets a notification when a player snuffs a light
+- Players carry one light at a time, per the core rules (p.84, "extinguish all old light sources, start a new timer"). Lighting a new one, from the panel or a token's right-click, pauses the current light. Their list keeps two: the current light and the one last paused. This replaces the 3-per-player cap.
+- Same per token: right-clicking a token that already has a light burning (the GM's or a player's) pauses that light and starts the new one
+- Paused lights keep their remaining time and show "Paused". They don't trigger a burn-out alert, and Resume all skips them. The GM can still relight one with its play button.
+- GM gets a notification when a player's light is paused this way
 
 ## Version 2026-10-15.2
 

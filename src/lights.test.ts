@@ -13,7 +13,7 @@ import {
   parseRoomState,
   pause,
   replacePlayerLight,
-  snuff,
+  setAsideLight,
   remainingSec,
   reset,
   resume,
@@ -252,38 +252,45 @@ describe("one light per player (rules p.84)", () => {
   const torch = createLight("torch", "Kira's torch", "time", 60, T0);
   const lantern = createLight("lantern", "Kira's lantern", "time", 60, T0 + 600_000);
 
-  it("snuffing pauses the light, keeps its time, and isn't a burn-out", () => {
-    const out = snuff(torch, T0 + 600_000);
-    expect(out.snuffed).toBe(true);
+  it("pausing pauses the light, keeps its time, and isn't a burn-out", () => {
+    const out = setAsideLight(torch, T0 + 600_000);
+    expect(out.setAside).toBe(true);
     expect(isRunning(out)).toBe(false);
     expect(remainingSec(out, T0 + 9e9)).toBe(3000);
     expect(isOut(out, T0 + 9e9)).toBe(false);
   });
 
-  it("lighting a new one snuffs the current one and keeps just the two", () => {
+  it("lighting a new one pauses the current one and keeps just the two", () => {
     const lights = replacePlayerLight([torch], lantern, T0 + 600_000);
-    expect(lights.map((l) => [l.id, l.snuffed])).toEqual([["torch", true], ["lantern", false]]);
+    expect(lights.map((l) => [l.id, l.setAside])).toEqual([["torch", true], ["lantern", false]]);
 
     const spell = createLight("spell", "Light", "time", 60, T0 + 1_200_000);
     const next = replacePlayerLight(lights, spell, T0 + 1_200_000);
-    expect(next.map((l) => [l.id, l.snuffed])).toEqual([["lantern", true], ["spell", false]]);
+    expect(next.map((l) => [l.id, l.setAside])).toEqual([["lantern", true], ["spell", false]]);
   });
 
   it("with nothing burning, keeps the most recent old light as is", () => {
     const burnedOut = pause(createLight("old", "Old", "time", 1, T0), T0 + 120_000);
     const lights = replacePlayerLight([burnedOut], lantern, T0 + 600_000);
-    expect(lights.map((l) => [l.id, l.snuffed])).toEqual([["old", false], ["lantern", false]]);
+    expect(lights.map((l) => [l.id, l.setAside])).toEqual([["old", false], ["lantern", false]]);
     expect(replacePlayerLight([], lantern, T0)).toEqual([lantern]);
   });
 
-  it("relighting or resetting clears snuffed", () => {
-    const out = snuff(torch, T0 + 600_000);
-    expect(resume(out, T0 + 700_000).snuffed).toBe(false);
-    expect(reset(out).snuffed).toBe(false);
+  it("relighting or resetting clears paused", () => {
+    const out = setAsideLight(torch, T0 + 600_000);
+    expect(resume(out, T0 + 700_000).setAside).toBe(false);
+    expect(reset(out).setAside).toBe(false);
   });
 
-  it("reads snuffed from metadata", () => {
-    expect(parseRoomState({ lights: [{ ...torch, snuffed: true }] }).lights[0].snuffed).toBe(true);
-    expect(parseRoomState({ lights: [{ ...torch, snuffed: "yes" }] }).lights[0].snuffed).toBe(false);
+  it("reads the token link from metadata, rejecting junk", () => {
+    const linked = createLight("a", "T", "time", 60, T0, "tok-1");
+    expect(parseRoomState({ lights: [linked] }).lights[0].tokenId).toBe("tok-1");
+    expect(parseRoomState({ lights: [{ ...linked, tokenId: 7 }] }).lights[0].tokenId).toBeNull();
+    expect(parseRoomState({ lights: [{ ...linked, tokenId: "x".repeat(65) }] }).lights[0].tokenId).toBeNull();
+  });
+
+  it("reads paused from metadata", () => {
+    expect(parseRoomState({ lights: [{ ...torch, setAside: true }] }).lights[0].setAside).toBe(true);
+    expect(parseRoomState({ lights: [{ ...torch, setAside: "yes" }] }).lights[0].setAside).toBe(false);
   });
 });

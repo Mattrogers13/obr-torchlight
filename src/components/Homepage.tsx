@@ -102,11 +102,11 @@ const Homepage: React.FC = () => {
         <h3 className="text-xl font-semibold mb-2 mt-4 text-theme">Player Lights</h3>
         <p className="mb-2 text-theme-secondary">
           The GM can let players light their own torches, one at a time:
-          lighting a new one snuffs the old one, as in the rules. The GM can
+          lighting a new one pauses the old one, as in the rules. The GM can
           separately let them remove their own. Players can never remove the
           GM's lights or anyone else's. The GM sees every player light, with
           its owner's name, can pause, adjust or remove it, and gets a
-          notification whenever a player lights, snuffs or removes one.
+          notification whenever a player lights, pauses or removes one.
         </p>
         <h3 className="text-xl font-semibold mb-2 mt-4 text-theme">Data Storage</h3>
         <p className="mb-2 text-theme-secondary">

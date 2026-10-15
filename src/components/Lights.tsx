@@ -57,8 +57,8 @@ const TIME_STEPS = [-10, -5, -1, 1, 5, 10];
 const StatusTag: React.FC<{ light: Light; now: number }> = ({ light, now }) =>
   isOut(light, now) ? (
     <span className="ml-2 text-sm text-theme-danger">Out</span>
-  ) : light.snuffed ? (
-    <span className="ml-2 text-sm text-theme-secondary">Snuffed</span>
+  ) : light.setAside ? (
+    <span className="ml-2 text-sm text-theme-secondary">Paused</span>
   ) : null;
 
 const LightReadout: React.FC<{ light: Light; now: number }> = ({ light, now }) => {
@@ -156,7 +156,7 @@ export const LightRow: React.FC<{
 }> = ({ light, owner, now, onToggle, onReset, onTurn, onAdjustTime, onRemove }) => {
   const out = isOut(light, now);
   return (
-    <li className={`border border-theme rounded p-3 ${out || light.snuffed ? "opacity-60" : ""}`}>
+    <li className={`border border-theme rounded p-3 ${out || light.setAside ? "opacity-60" : ""}`}>
       <div className="flex items-center justify-between mb-2">
         <span className="font-semibold text-theme truncate" title={light.name}>
           {light.name}
@@ -219,7 +219,7 @@ export const PlayerLightList: React.FC<{
   ) : (
     <ul className="flex flex-col gap-2">
       {lights.map((light) => (
-        <li key={light.id} className={`flex items-center gap-2 border border-theme rounded p-3 ${isOut(light, now) || light.snuffed ? "opacity-60" : ""}`}>
+        <li key={light.id} className={`flex items-center gap-2 border border-theme rounded p-3 ${isOut(light, now) || light.setAside ? "opacity-60" : ""}`}>
           <span className="text-theme truncate" title={light.name}>
             {light.name}
             <StatusTag light={light} now={now} />
