@@ -60,14 +60,17 @@ describe("lightFromTokens (token right-click)", () => {
     expect(room.metadata[ROOM_KEY]).toEqual({ rev: 2, playersCanAdd: true });
   });
 
-  it("respects the player cap and says what was skipped", async () => {
+  it("players light one at a time: the new light snuffs the old", async () => {
     room.metadata = { [ROOM_KEY]: { playersCanAdd: true } };
-    await lightFromTokens(kira, ["A", "B"], T0);
-    expect(await lightFromTokens(kira, ["C", "D"], T0)).toBe(
-      "Lit C's torch (60 min). 1 skipped: limit of 3 lights.",
+    expect(await lightFromTokens(kira, ["Kira", "Bo"], T0)).toBe("Lit Kira's torch (60 min).");
+    expect(mine().lights).toHaveLength(1);
+    expect(await lightFromTokens(kira, ["Bo"], T0 + 1000)).toBe(
+      "Lit Bo's torch (60 min). Snuffed Kira's torch.",
     );
-    expect(mine().lights).toHaveLength(3);
-    expect(await lightFromTokens(kira, ["E"], T0)).toBe("Limit of 3 lights reached.");
+    expect(await lightFromTokens(kira, ["Ash"], T0 + 2000)).toBe(
+      "Lit Ash's torch (60 min). Snuffed Bo's torch.",
+    );
+    expect(mine().lights.map((l) => l.name)).toEqual(["Bo's torch", "Ash's torch"]);
   });
 
   it("surfaces a failed save", async () => {

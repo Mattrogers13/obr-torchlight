@@ -105,15 +105,16 @@ Timer logic is pure functions in `src/lights.ts` (every time calc takes `now`, e
 `src/hooks/useRoomState.ts` syncs two kinds of room metadata docs:
 
 - `${ID}/state` (`RoomState`: GM `lights`, `showToPlayers`, `playersCanAdd`, `playersCanRemove`). Only GMs write it.
-- `${ID}/player/<playerId>` (`PlayerDoc`: `ownerName`, up to 3 `lights`). Each player writes only their own; GMs can write any. Separate keys so a player's write can't clobber a GM edit (each key is last-write-wins).
+- `${ID}/player/<playerId>` (`PlayerDoc`: `ownerName`, at most 2 `lights`: the current one and the one last snuffed). Each player writes only their own; GMs can write any. Separate keys so a player's write can't clobber a GM edit (each key is last-write-wins).
 
 Rules:
 
 - Room metadata is writable by any client and any extension, so everything read goes through `parseRoomState` / `parsePlayerDoc` (drops malformed lights, clamps numbers). Keep it that way.
 - Player permissions are enforced client-side only (there's no server). A tampering client could write any key; acceptable for a game table, but don't build anything on the assumption it can't.
 - Every write bumps that doc's `rev`; incoming docs with a lower `rev` are ignored (late echoes of our own earlier writes). `resync()` forces past it after a failed save.
-- Room metadata is capped at 16kB total across all extensions. Limits in `LIMITS` (20 GM lights, 3 per player, 40-char names) keep us small; failed writes show an error and resync.
+- Room metadata is capped at 16kB total across all extensions. Limits in `LIMITS` (20 GM lights, 2 per player, 40-char names) keep us small; failed writes show an error and resync.
 - Burn-out alerts fire once per light, player lights included: the GM client detects them and sets `alerted` in the owning doc. A light that burned out while no GM panel was open alerts when a GM next opens it.
+- Players carry one light at a time (rules p.84, "extinguish all old light sources"): `replacePlayerLight` snuffs the current light (`snuffed: true`, paused, keeps its time) and drops anything older. Snuffed isn't out: no burn-out alert, and Resume all skips it. GM lights have no such rule.
 - Known limitation: two writers editing the same doc at the same instant is last-write-wins.
 - GM notifications for player activity (lit / removed) come from the GM client diffing light ids against the previous render, not from a broadcast. Lights present at first load and the GM's own removals don't alert.
 

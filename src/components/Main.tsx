@@ -15,9 +15,11 @@ import {
   cleanName,
   createLight,
   isOut,
+  isActive,
   isRunning,
   nextDefaultName,
   pause,
+  replacePlayerLight,
   reset,
   resume,
 } from "../lights";
@@ -56,10 +58,10 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
   const now = useNow(anyRunning);
   const alertsSent = useRef(new Set<string>());
 
-  // GM only: tell the GM about everything players do (light or remove a
-  // torch), by diffing the room's lights against the last render. Lights
-  // already burning when the panel opens don't count, and neither do the
-  // GM's own removals of player lights.
+  // GM only: tell the GM about everything players do (light, snuff or
+  // remove a light), by diffing the room's lights against the last render.
+  // Lights already burning when the panel opens don't count, nor do the GM's
+  // own removals, nor the old light dropped when a player lights a new one.
   const seen = useRef<Map<string, Entry> | null>(null);
   const removedByMe = useRef(new Set<string>());
   useEffect(() => {
@@ -68,13 +70,19 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
     const previous = seen.current;
     seen.current = current;
     if (previous === null) return;
+    const litBy = new Set<string>();
     for (const [id, e] of current) {
-      if (e.ownerId !== null && !previous.has(id)) {
+      if (e.ownerId === null) continue;
+      const before = previous.get(id);
+      if (!before) {
+        litBy.add(e.ownerId);
         notify(`${e.ownerName || "A player"} lit ${e.light.name}`, "INFO");
+      } else if (e.light.snuffed && !before.light.snuffed) {
+        notify(`${e.ownerName || "A player"} snuffed ${e.light.name}`, "INFO");
       }
     }
     for (const [id, e] of previous) {
-      if (e.ownerId === null || current.has(id)) continue;
+      if (e.ownerId === null || current.has(id) || litBy.has(e.ownerId)) continue;
       if (removedByMe.current.delete(id)) continue;
       notify(`${e.ownerName || "A player"} removed ${e.light.name}`, "INFO");
     }
@@ -176,7 +184,10 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
     const t = Date.now();
     const owners = new Set(entries.filter((e) => e.light.kind === "time").map((e) => e.ownerId));
     owners.forEach((ownerId) =>
-      changeLights(ownerId, (lights) => lights.map((l) => (running ? resume(l, t) : pause(l, t)))),
+      // Resume all never relights a snuffed light.
+      changeLights(ownerId, (lights) =>
+        lights.map((l) => (running ? (l.snuffed ? l : resume(l, t)) : pause(l, t))),
+      ),
     );
   };
 
@@ -191,25 +202,19 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
       return <PlayerView />;
     }
     const ownName = myName ? `${myName}'s torch` : "Torch";
+    // One light at a time: lighting a new one snuffs the current one.
     const addOwnLight = (name: string, kind: LightKind, amount: number) =>
-      updatePlayer(myId, (d) =>
-        !state.playersCanAdd || d.lights.length >= LIMITS.maxPlayerLights
-          ? d
-          : {
-              ...d,
-              ownerName: cleanName(myName, "Player"),
-              lights: [
-                ...d.lights,
-                createLight(
-                  crypto.randomUUID(),
-                  cleanName(name, d.lights.length === 0 ? ownName : `${ownName} ${d.lights.length + 1}`),
-                  kind,
-                  amount,
-                  Date.now(),
-                ),
-              ],
-            },
-      );
+      updatePlayer(myId, (d) => {
+        if (!state.playersCanAdd) return d;
+        const t = Date.now();
+        const fresh = createLight(crypto.randomUUID(), cleanName(name, ownName), kind, amount, t);
+        return {
+          ...d,
+          ownerName: cleanName(myName, "Player"),
+          lights: replacePlayerLight(d.lights, fresh, t),
+        };
+      });
+    const burning = mine.find((l) => isActive(l, now));
     const removeOwnLight = (light: Light) =>
       state.playersCanRemove &&
       updatePlayer(myId, (d) => ({ ...d, lights: d.lights.filter((l) => l.id !== light.id) }));
@@ -221,12 +226,14 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
           <div className="bg-theme-card rounded-lg border border-theme p-4 mt-4">
             <h2 className="text-lg font-semibold mb-3 text-theme">Your Lights</h2>
             {state.playersCanAdd && (
-              <AddLightForm
-                defaultName={mine.length === 0 ? ownName : `${ownName} ${mine.length + 1}`}
-                disabled={mine.length >= LIMITS.maxPlayerLights}
-                limit={LIMITS.maxPlayerLights}
-                onAdd={addOwnLight}
-              />
+              <>
+                <AddLightForm defaultName={ownName} disabled={false} onAdd={addOwnLight} />
+                {burning && (
+                  <p className="-mt-2 mb-4 text-sm text-theme-secondary">
+                    Lighting a new one snuffs {burning.name}.
+                  </p>
+                )}
+              </>
             )}
             <PlayerLightList
               lights={mine}
@@ -247,7 +254,7 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
 
   const timeLights = entries
     .map((e) => e.light)
-    .filter((l) => l.kind === "time" && !isOut(l, now));
+    .filter((l) => l.kind === "time" && isActive(l, now));
   const canPauseAll = timeLights.some(isRunning);
   const canResumeAll = timeLights.some((l) => !isRunning(l));
 
@@ -303,7 +310,7 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
               checked={state.playersCanAdd}
               onChange={() => update((s) => ({ ...s, playersCanAdd: !s.playersCanAdd }))}
             />
-            Players can light their own (up to {LIMITS.maxPlayerLights} each)
+            Players can light their own (one at a time)
           </label>
           <label className="flex items-center gap-2">
             <input

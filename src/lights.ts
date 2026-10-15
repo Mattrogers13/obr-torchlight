@@ -16,6 +16,8 @@ export interface Light {
   turnsUsed: number;
   // true once the burn-out alert has been sent, so it fires exactly once
   alerted: boolean;
+  // Put out on purpose (a player lit a new light). Paused, keeps its time.
+  snuffed: boolean;
 }
 
 export interface RoomState {
@@ -39,7 +41,9 @@ export interface PlayerDoc {
 
 export const LIMITS = {
   maxLights: 20,
-  maxPlayerLights: 3,
+  // A player's current light plus the one they last snuffed (rules p.84:
+  // lighting a new source extinguishes the old and starts a fresh timer).
+  maxPlayerLights: 2,
   maxNameLength: 40,
   minMinutes: 1,
   maxMinutes: 1440,
@@ -89,14 +93,14 @@ export const createLight = (
     return {
       id, name, kind, durationSec, remainingSec: durationSec,
       endsAt: now + durationSec * 1000,
-      maxTurns: DEFAULT_TURNS, turnsUsed: 0, alerted: false,
+      maxTurns: DEFAULT_TURNS, turnsUsed: 0, alerted: false, snuffed: false,
     };
   }
   return {
     id, name, kind,
     durationSec: 0, remainingSec: 0, endsAt: null,
     maxTurns: clampInt(amount, LIMITS.minTurns, LIMITS.maxTurns),
-    turnsUsed: 0, alerted: false,
+    turnsUsed: 0, alerted: false, snuffed: false,
   };
 };
 
@@ -115,6 +119,9 @@ export const isOut = (light: Light, now: number) =>
     ? remainingSec(light, now) === 0
     : light.turnsUsed >= light.maxTurns;
 
+// Burning or ready to burn: not out and not snuffed.
+export const isActive = (light: Light, now: number) => !light.snuffed && !isOut(light, now);
+
 export const pause = (light: Light, now: number): Light =>
   isRunning(light)
     ? { ...light, remainingSec: remainingSec(light, now), endsAt: null }
@@ -122,7 +129,7 @@ export const pause = (light: Light, now: number): Light =>
 
 export const resume = (light: Light, now: number): Light =>
   light.kind === "time" && !isRunning(light) && light.remainingSec > 0
-    ? { ...light, endsAt: now + light.remainingSec * 1000 }
+    ? { ...light, endsAt: now + light.remainingSec * 1000, snuffed: false }
     : light;
 
 // Back to full and paused, ready to be relit.
@@ -132,10 +139,21 @@ export const reset = (light: Light): Light => ({
   endsAt: null,
   turnsUsed: 0,
   alerted: false,
+  snuffed: false,
 });
 
 // GM correction: add or take away time. Keeps running or paused as it was.
 // Adding past full stretches the duration (remainingSec is capped at it).
+export const snuff = (light: Light, now: number): Light => ({ ...pause(light, now), snuffed: true });
+
+// A player lights something new: their current light is snuffed and kept
+// alongside the new one; anything older is dropped.
+export const replacePlayerLight = (lights: Light[], fresh: Light, now: number): Light[] => {
+  const current = [...lights].reverse().find((l) => isActive(l, now));
+  const keep = current ? snuff(current, now) : lights[lights.length - 1];
+  return keep ? [keep, fresh] : [fresh];
+};
+
 export const adjustTime = (light: Light, deltaSec: number, now: number): Light => {
   if (light.kind !== "time") return light;
   const left = clampInt(remainingSec(light, now) + deltaSec, 0, LIMITS.maxMinutes * 60);
@@ -193,6 +211,7 @@ export const parseLight = (raw: unknown): Light | null => {
       endsAt: raw.endsAt === null ? null : raw.endsAt,
       maxTurns: DEFAULT_TURNS, turnsUsed: 0,
       alerted: raw.alerted === true,
+      snuffed: raw.snuffed === true,
     };
   }
 
@@ -203,6 +222,7 @@ export const parseLight = (raw: unknown): Light | null => {
     durationSec: 0, remainingSec: 0, endsAt: null,
     maxTurns, turnsUsed: clampInt(raw.turnsUsed, 0, maxTurns),
     alerted: raw.alerted === true,
+    snuffed: raw.snuffed === true,
   };
 };
 
