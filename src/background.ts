@@ -1,7 +1,7 @@
 import OBR, { ContextMenuItem } from "@owlbear-rodeo/sdk";
 
 import { ID, ROOM_KEY } from "./constants";
-import { parseRoomState } from "./lights";
+import { parsePlayersCanAdd, parseRoomState } from "./lights";
 import { startTokenSync } from "./tokenSync";
 import { errorMessage } from "./utils";
 
@@ -83,10 +83,9 @@ OBR.onReady(async () => {
   // changes (player.onChange fires on every click) don't.
   let lastAllowFlag: boolean | null = null;
   OBR.room.onMetadataChange((metadata) => {
-    // Just the one flag (parseRoomState would parse every light, on every
-    // extension's write, to read it).
-    const raw = metadata[ROOM_KEY];
-    const flag = typeof raw === "object" && raw !== null && (raw as { playersCanAdd?: unknown }).playersCanAdd === true;
+    // Just the one flag; parseRoomState would parse every light, on every
+    // extension's write, to read it.
+    const flag = parsePlayersCanAdd(metadata[ROOM_KEY]);
     if (flag === lastAllowFlag) return;
     lastAllowFlag = flag;
     requestSync();
