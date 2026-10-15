@@ -2,15 +2,15 @@
 
 Manual test pass in Owlbear Rodeo before merging [PR #6](https://github.com/Mattrogers13/obr-torchlight/pull/6).
 
-Preview manifest (rebuilds on every push to the `multi-light-timers` branch):
+Dev manifest (shows up as "Torchlight (Dev)"; install once, rebuilds on every push to `dev`):
 
 ```
-https://multi-light-timers-torchlight.editbag.workers.dev/manifest.json
+https://dev-torchlight.editbag.workers.dev/manifest.json
 ```
 
 ## Steps
 
-1. Add the preview manifest above as an extension. If the production Torchlight is installed in that room, remove it for the test, since both show up as "Torchlight" in the toolbar.
+1. Enable "Torchlight (Dev)" in a test room (add the dev manifest above once, if you haven't).
 2. Open the room as GM in one browser and as a player in another (a private window works).
 3. Add a couple of lights: one real-time 1-minute light and one 3-turn light. Turn on "show to players" and check the player window lists them.
 4. Switch the GM to another tab for a few minutes, then come back. The time should be exactly right, not behind.
