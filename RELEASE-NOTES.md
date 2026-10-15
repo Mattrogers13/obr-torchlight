@@ -1,5 +1,14 @@
 # Release Notes
 
+## Version 2026-10-15.4
+
+### Features
+
+- Light sources from the core rules: Torch (near, 30 ft), Lantern (double near, 60 ft), Light spell (near, 30 ft), each an hour of real time. Pick one in the add form; each row shows its source. Ranges are stored for the upcoming token-light link.
+- Right-click menu now has Light torch, Light lantern and Cast Light
+- GM "Put out…" opens a checklist of everything burning. Torches and lanterns are pre-checked (wind and water put out flames on a failed DC 15 DEX, rules p.110); Light spells aren't. Put-out lights keep their time, show "Put out", and Resume all leaves them alone. Everyone gets the went-out alert.
+- GM "Remove all" clears every light, players' included, after a confirm
+
 ## Version 2026-10-15.3
 
 ### Changes

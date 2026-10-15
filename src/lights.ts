@@ -3,6 +3,21 @@
 
 export type LightKind = "time" | "turns";
 
+// Shadowdark light sources (core rules: torch and lantern p.34, Light spell
+// p.64, distances p.84). rangeFt is the radius of light; minutes the burn time.
+export type LightSource = "torch" | "lantern" | "light-spell";
+export const SOURCES: Record<LightSource, { label: string; rangeFt: number; minutes: number; flame: boolean }> = {
+  torch: { label: "Torch", rangeFt: 30, minutes: 60, flame: true },
+  lantern: { label: "Lantern", rangeFt: 60, minutes: 60, flame: true },
+  "light-spell": { label: "Light spell", rangeFt: 30, minutes: 60, flame: false },
+};
+export const SOURCE_IDS = Object.keys(SOURCES) as LightSource[];
+
+// Why a light stopped on purpose (it keeps its remaining time, and Resume all
+// leaves it alone): "swap" = a newer light replaced it (shown as Paused),
+// "put-out" = the GM put it out (wind, water, a dispel).
+export type SetAside = "swap" | "put-out" | null;
+
 export interface Light {
   id: string;
   name: string;
@@ -16,8 +31,8 @@ export interface Light {
   turnsUsed: number;
   // true once the burn-out alert has been sent, so it fires exactly once
   alerted: boolean;
-  // Put out on purpose (a player lit a new light). Paused, keeps its time.
-  setAside: boolean;
+  source: LightSource;
+  setAside: SetAside;
   // Token this light was lit on (right-click), if any. One burning light per token.
   tokenId: string | null;
 }
@@ -74,6 +89,13 @@ export const cleanName = (name: string, fallback: string) => {
   return trimmed || fallback;
 };
 
+// "Kira's torch", "Kira's lantern", "Kira's Light spell".
+export const lightName = (tokenName: string, source: LightSource = "torch") => {
+  const base = tokenName.trim();
+  const noun = source === "light-spell" ? SOURCES[source].label : SOURCES[source].label.toLowerCase();
+  return cleanName(base ? `${base}'s ${noun}` : "", SOURCES[source].label);
+};
+
 export const nextDefaultName = (lights: Light[]) => {
   const taken = new Set(lights.map((l) => l.name));
   let n = lights.length + 1;
@@ -88,7 +110,7 @@ export const createLight = (
   kind: LightKind,
   amount: number,
   now: number,
-  tokenId: string | null = null,
+  { tokenId = null, source = "torch" }: { tokenId?: string | null; source?: LightSource } = {},
 ): Light => {
   if (kind === "time") {
     const durationSec =
@@ -96,14 +118,14 @@ export const createLight = (
     return {
       id, name, kind, durationSec, remainingSec: durationSec,
       endsAt: now + durationSec * 1000,
-      maxTurns: DEFAULT_TURNS, turnsUsed: 0, alerted: false, setAside: false, tokenId,
+      maxTurns: DEFAULT_TURNS, turnsUsed: 0, alerted: false, source, setAside: null, tokenId,
     };
   }
   return {
     id, name, kind,
     durationSec: 0, remainingSec: 0, endsAt: null,
     maxTurns: clampInt(amount, LIMITS.minTurns, LIMITS.maxTurns),
-    turnsUsed: 0, alerted: false, setAside: false, tokenId,
+    turnsUsed: 0, alerted: false, source, setAside: null, tokenId,
   };
 };
 
@@ -122,7 +144,7 @@ export const isOut = (light: Light, now: number) =>
     ? remainingSec(light, now) === 0
     : light.turnsUsed >= light.maxTurns;
 
-// Burning or ready to burn: not out and not setAside.
+// Burning or ready to burn: not out and not set aside.
 export const isActive = (light: Light, now: number) => !light.setAside && !isOut(light, now);
 
 export const pause = (light: Light, now: number): Light =>
@@ -132,7 +154,7 @@ export const pause = (light: Light, now: number): Light =>
 
 export const resume = (light: Light, now: number): Light =>
   light.kind === "time" && !isRunning(light) && light.remainingSec > 0
-    ? { ...light, endsAt: now + light.remainingSec * 1000, setAside: false }
+    ? { ...light, endsAt: now + light.remainingSec * 1000, setAside: null }
     : light;
 
 // Back to full and paused, ready to be relit.
@@ -142,12 +164,15 @@ export const reset = (light: Light): Light => ({
   endsAt: null,
   turnsUsed: 0,
   alerted: false,
-  setAside: false,
+  setAside: null,
 });
 
 // GM correction: add or take away time. Keeps running or paused as it was.
 // Adding past full stretches the duration (remainingSec is capped at it).
-export const setAsideLight = (light: Light, now: number): Light => ({ ...pause(light, now), setAside: true });
+export const setAsideLight = (light: Light, now: number, why: Exclude<SetAside, null> = "swap"): Light => ({
+  ...pause(light, now),
+  setAside: why,
+});
 
 // A player lights something new: their current light is paused and kept
 // alongside the new one; anything older is dropped.
@@ -205,6 +230,13 @@ const isObject = (v: unknown): v is Record<string, unknown> =>
 const finite = (v: unknown): v is number =>
   typeof v === "number" && Number.isFinite(v);
 
+const parseSource = (v: unknown): LightSource =>
+  typeof v === "string" && (SOURCE_IDS as string[]).includes(v) ? (v as LightSource) : "torch";
+
+// `true` is how #21 stored a swap, before put-out existed.
+const parseSetAside = (v: unknown): SetAside =>
+  v === "swap" || v === "put-out" ? v : v === true ? "swap" : null;
+
 const parseTokenId = (v: unknown) =>
   typeof v === "string" && v.length > 0 && v.length <= 64 ? v : null;
 
@@ -227,7 +259,8 @@ export const parseLight = (raw: unknown): Light | null => {
       endsAt: raw.endsAt === null ? null : raw.endsAt,
       maxTurns: DEFAULT_TURNS, turnsUsed: 0,
       alerted: raw.alerted === true,
-      setAside: raw.setAside === true,
+      source: parseSource(raw.source),
+      setAside: parseSetAside(raw.setAside),
       tokenId: parseTokenId(raw.tokenId),
     };
   }
@@ -239,7 +272,8 @@ export const parseLight = (raw: unknown): Light | null => {
     durationSec: 0, remainingSec: 0, endsAt: null,
     maxTurns, turnsUsed: clampInt(raw.turnsUsed, 0, maxTurns),
     alerted: raw.alerted === true,
-    setAside: raw.setAside === true,
+    source: parseSource(raw.source),
+    setAside: parseSetAside(raw.setAside),
     tokenId: parseTokenId(raw.tokenId),
   };
 };

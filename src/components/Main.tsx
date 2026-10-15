@@ -15,15 +15,26 @@ import {
   cleanName,
   createLight,
   isOut,
+  LightSource,
   isActive,
   isRunning,
+  lightName,
   nextDefaultName,
   pause,
   replacePlayerLight,
   reset,
   resume,
+  setAsideLight,
 } from "../lights";
-import { AddLightForm, EyeIcon, EyeSlashIcon, LightRow, PlayerLightList } from "./Lights";
+import {
+  AddLightForm,
+  EyeIcon,
+  EyeSlashIcon,
+  GmBulkActions,
+  LightEntry,
+  LightRow,
+  PlayerLightList,
+} from "./Lights";
 
 export const LIGHT_OUT_CHANNEL = `${ID}/light-out`;
 
@@ -34,12 +45,7 @@ const parseLightOut = (data: unknown): string[] =>
         .map((n) => n.slice(0, LIMITS.maxNameLength))
     : [];
 
-// Every light in the room, whoever owns it. ownerId null = the GM's shared state.
-interface Entry {
-  light: Light;
-  ownerId: string | null;
-  ownerName: string;
-}
+type Entry = LightEntry;
 
 const Main: React.FC<{ player: boolean }> = ({ player }) => {
   const myId = OBR.player.id;
@@ -77,7 +83,7 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
       if (!before) {
         litBy.add(e.ownerId);
         notify(`${e.ownerName || "A player"} lit ${e.light.name}`, "INFO");
-      } else if (e.light.setAside && !before.light.setAside) {
+      } else if (e.light.setAside === "swap" && before.light.setAside !== "swap") {
         notify(`${e.ownerName || "A player"} paused ${e.light.name}`, "INFO");
       }
     }
@@ -156,7 +162,7 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
     changeLights(entry.ownerId, (lights) => lights.filter((l) => l.id !== entry.light.id));
   };
 
-  const addLight = (name: string, kind: LightKind, amount: number) =>
+  const addLight = (name: string, kind: LightKind, amount: number, source: LightSource) =>
     update((s) =>
       s.lights.length >= LIMITS.maxLights
         ? s
@@ -170,6 +176,7 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
                 kind,
                 amount,
                 Date.now(),
+                { source },
               ),
             ],
           },
@@ -191,6 +198,30 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
     );
   };
 
+  // GM: put out the checked lights (wind, water, a dispel). They keep their
+  // time, show "Put out", and everyone gets the went-out alert.
+  const putOut = (ids: Set<string>) => {
+    const t = Date.now();
+    const hit = entries.filter((e) => ids.has(e.light.id) && isActive(e.light, t));
+    if (hit.length === 0) return;
+    new Set(hit.map((e) => e.ownerId)).forEach((ownerId) =>
+      changeLights(ownerId, (lights) =>
+        lights.map((l) => (ids.has(l.id) && isActive(l, t) ? setAsideLight(l, t, "put-out") : l)),
+      ),
+    );
+    const names = hit.map((e) => e.light.name);
+    OBR.broadcast
+      .sendMessage(LIGHT_OUT_CHANNEL, names, { destination: "ALL" })
+      .catch((err) =>
+        notify(`${names.join(", ")} went out! (Couldn't alert players: ${errorMessage(err)})`, "WARNING"),
+      );
+  };
+
+  const removeAll = () => {
+    entries.forEach((e) => removedByMe.current.add(e.light.id));
+    new Set(entries.map((e) => e.ownerId)).forEach((ownerId) => changeLights(ownerId, () => []));
+  };
+
   if (!loaded) {
     return <div className="p-4 text-theme-secondary">Loading…</div>;
   }
@@ -201,13 +232,15 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
     if (!state.showToPlayers && !state.playersCanAdd && mine.length === 0) {
       return <PlayerView />;
     }
-    const ownName = myName ? `${myName}'s torch` : "Torch";
+    const ownName = (source: LightSource) => lightName(myName, source);
     // One light at a time: lighting a new one pauses the current one.
-    const addOwnLight = (name: string, kind: LightKind, amount: number) =>
+    const addOwnLight = (name: string, kind: LightKind, amount: number, source: LightSource) =>
       updatePlayer(myId, (d) => {
         if (!state.playersCanAdd) return d;
         const t = Date.now();
-        const fresh = createLight(crypto.randomUUID(), cleanName(name, ownName), kind, amount, t);
+        const fresh = createLight(crypto.randomUUID(), cleanName(name, ownName(source)), kind, amount, t, {
+          source,
+        });
         return {
           ...d,
           ownerName: cleanName(myName, "Player"),
@@ -274,24 +307,17 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
         .
       </p>
 
-      {timeLights.length > 0 && (
-        <div className="flex gap-2 mb-4">
-          <button
-            onClick={() => setAllRunning(false)}
-            disabled={!canPauseAll}
-            className={`px-3 py-2 bg-theme-secondary text-white rounded ${canPauseAll ? "" : "opacity-50 cursor-not-allowed"}`}
-          >
-            Pause all
-          </button>
-          <button
-            onClick={() => setAllRunning(true)}
-            disabled={!canResumeAll}
-            className={`px-3 py-2 bg-theme-secondary text-white rounded ${canResumeAll ? "" : "opacity-50 cursor-not-allowed"}`}
-          >
-            Resume all
-          </button>
-        </div>
-      )}
+      <GmBulkActions
+        entries={entries}
+        now={now}
+        canPauseAll={canPauseAll}
+        canResumeAll={canResumeAll}
+        onPauseAll={() => setAllRunning(false)}
+        onResumeAll={() => setAllRunning(true)}
+        onPutOut={putOut}
+        onRemoveAll={removeAll}
+      />
+
       <div className="bg-theme-card rounded-lg border border-theme p-4 mt-4 mb-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold text-theme">Light Sources</h2>
@@ -322,7 +348,7 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
           </label>
         </div>
         <AddLightForm
-          defaultName={nextDefaultName(state.lights)}
+          defaultName={() => nextDefaultName(state.lights)}
           disabled={state.lights.length >= LIMITS.maxLights}
           onAdd={addLight}
         />

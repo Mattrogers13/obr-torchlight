@@ -80,9 +80,19 @@ const Homepage: React.FC = () => {
         </p>
         <h3 className="text-xl font-semibold mb-2 mt-4 text-theme">Right-click a Token</h3>
         <p className="mb-2 text-theme-secondary">
-          Right-click a character token and choose <strong>Light torch</strong>{" "}
-          to start a 60-minute torch named after it. Players get the same
-          option on tokens they can edit, when the GM allows player lights.
+          Right-click a character token and choose <strong>Light torch</strong>,{" "}
+          <strong>Light lantern</strong> or <strong>Cast Light</strong> to start
+          a 60-minute light named after it. Lighting a token that already has a
+          light pauses the old one. Players get the same options on tokens they
+          can edit, when the GM allows player lights.
+        </p>
+        <h3 className="text-xl font-semibold mb-2 mt-4 text-theme">Torches, Lanterns and Light</h3>
+        <p className="mb-2 text-theme-secondary">
+          Each light is a torch (30 ft), lantern (60 ft) or Light spell (30 ft),
+          all burning for an hour of real time, per the core rules. When wind or
+          water hits the party, the GM's <strong>Put out…</strong> lists what's
+          burning with torches and lanterns pre-checked; uncheck whoever made
+          their save. <strong>Remove all</strong> clears the board.
         </p>
         <h3 className="text-xl font-semibold mb-2 mt-4 text-theme">Burn-out Alerts</h3>
         <p className="mb-2 text-theme-secondary">

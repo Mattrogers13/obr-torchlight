@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import OBR from "@owlbear-rodeo/sdk";
 
 import { ROOM_KEY, playerKey } from "./components/util/constants";
-import { lightFromTokens, torchName } from "./lightFromTokens";
+import { lightFromTokens } from "./lightFromTokens";
+import { lightName } from "./lights";
 
 const room = vi.hoisted(() => ({ metadata: {} as Record<string, unknown> }));
 
@@ -22,9 +23,9 @@ const tok = (name: string) => ({ id: `tok-${name}`, name });
 const gm = { gm: true, playerId: "gm1", playerName: "Matt" };
 const kira = { gm: false, playerId: "p1", playerName: "Kira" };
 const shared = () =>
-  room.metadata[ROOM_KEY] as { rev: number; lights: { name: string; endsAt: number | null; setAside: boolean; tokenId: string }[] };
+  room.metadata[ROOM_KEY] as { rev: number; lights: { name: string; endsAt: number | null; setAside: string | null; tokenId: string }[] };
 const mine = () =>
-  room.metadata[playerKey("p1")] as { rev: number; ownerName: string; lights: { name: string; setAside: boolean }[] };
+  room.metadata[playerKey("p1")] as { rev: number; ownerName: string; lights: { name: string; setAside: string | null }[] };
 
 describe("lightFromTokens (token right-click)", () => {
   beforeEach(() => {
@@ -32,10 +33,13 @@ describe("lightFromTokens (token right-click)", () => {
     vi.clearAllMocks();
   });
 
-  it("names torches after the token", () => {
-    expect(torchName("Kira")).toBe("Kira's torch");
-    expect(torchName("  ")).toBe("Torch");
-    expect(torchName("x".repeat(80)).length).toBeLessThanOrEqual(40);
+  it("names lights after the token and source", () => {
+    expect(lightName("Kira")).toBe("Kira's torch");
+    expect(lightName("Kira", "lantern")).toBe("Kira's lantern");
+    expect(lightName("Kira", "light-spell")).toBe("Kira's Light spell");
+    expect(lightName("  ")).toBe("Torch");
+    expect(lightName("  ", "light-spell")).toBe("Light spell");
+    expect(lightName("x".repeat(80)).length).toBeLessThanOrEqual(40);
   });
 
   it("GM lights a burning 60-minute torch in the shared state", async () => {
@@ -52,7 +56,7 @@ describe("lightFromTokens (token right-click)", () => {
   });
 
   it("player can't light anything unless the GM allows it", async () => {
-    expect(await lightFromTokens(kira, [tok("Kira")], T0)).toMatch(/hasn't allowed/);
+    expect(await lightFromTokens(kira, [tok("Kira")], T0)).toMatch(/hasn't allowed players/);
     expect(OBR.room.setMetadata).not.toHaveBeenCalled();
   });
 
@@ -86,7 +90,7 @@ describe("lightFromTokens (token right-click)", () => {
     expect(await lightFromTokens(gm, [tok("Kira")], T0 + 60_000)).toBe(
       "Lit Kira's torch (60 min). Paused Kira's torch.",
     );
-    expect(shared().lights.map((l) => [l.tokenId, l.setAside, l.endsAt === null])).toEqual([
+    expect(shared().lights.map((l) => [l.tokenId, !!l.setAside, l.endsAt === null])).toEqual([
       ["tok-Kira", true, true],
       ["tok-Kira", false, false],
     ]);
@@ -100,7 +104,7 @@ describe("lightFromTokens (token right-click)", () => {
     await lightFromTokens(gm, [tok("Kira")], T0 + 1000);
     const bo = shared().lights.filter((l) => l.tokenId === "tok-Bo");
     expect(bo).toHaveLength(1);
-    expect(bo[0]).toMatchObject({ setAside: false });
+    expect(bo[0]).toMatchObject({ setAside: null });
   });
 
   it("GM lighting a token pauses a player's light burning on it", async () => {
@@ -109,7 +113,15 @@ describe("lightFromTokens (token right-click)", () => {
     expect(await lightFromTokens(gm, [tok("Kira")], T0 + 1000)).toBe(
       "Lit Kira's torch (60 min). Paused Kira's torch.",
     );
-    expect(mine().lights[0]).toMatchObject({ setAside: true });
+    expect(mine().lights[0]).toMatchObject({ setAside: "swap" });
     expect(mine().rev).toBe(2);
   });
+
+  it("lights a lantern or casts Light from the matching menu item", async () => {
+    expect(await lightFromTokens(gm, [tok("Kira")], T0, "lantern")).toBe("Lit Kira's lantern (60 min).");
+    expect(await lightFromTokens(gm, [tok("Bo")], T0, "light-spell")).toBe("Lit Bo's Light spell (60 min).");
+    const sources = (room.metadata[ROOM_KEY] as { lights: { source: string }[] }).lights.map((l) => l.source);
+    expect(sources).toEqual(["lantern", "light-spell"]);
+  });
 });
+
