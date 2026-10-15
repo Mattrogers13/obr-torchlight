@@ -276,6 +276,14 @@ export const PlayerLightList: React.FC<{
     </ul>
   );
 
+// "Active lights only" list filter (GM and player views).
+export const ActiveFilter: React.FC<{ checked: boolean; onToggle: () => void }> = ({ checked, onToggle }) => (
+  <label className="flex items-center gap-2 mb-3 text-sm text-theme-secondary">
+    <input type="checkbox" checked={checked} onChange={onToggle} />
+    Active lights only
+  </label>
+);
+
 // GM controls at the top of the panel. "Put out" opens a checklist of what's
 // burning, with flames (torches, lanterns) pre-checked: wind and water put
 // out flames on a failed DC 15 DEX check, a Light spell only to a Dud or a
