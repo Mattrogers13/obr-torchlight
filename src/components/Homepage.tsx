@@ -83,8 +83,10 @@ const Homepage: React.FC = () => {
           Right-click a character token, open <strong>Torchlight</strong>, and
           choose <strong>Light torch</strong>, <strong>Light lantern</strong> or{" "}
           <strong>Cast Light</strong> to start
-          a 60-minute light named after it. Lighting a token that already has a
-          light pauses the old one. Players get the same options on tokens they
+          a 60-minute light named after it. With Owlbear's Dynamic Fog in the
+          room, the token casts the light (30, 60 or 30 ft) and shows a small
+          badge; its previous light comes back when the source stops. Lighting
+          a token that already has a light pauses the old one. Players get the same options on tokens they
           can edit, when the GM allows player lights.
         </p>
         <h3 className="text-xl font-semibold mb-2 mt-4 text-theme">Torches, Lanterns and Light</h3>

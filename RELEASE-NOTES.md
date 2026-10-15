@@ -1,5 +1,14 @@
 # Release Notes
 
+## Version 2026-10-15.7
+
+### Features
+
+- Lighting a token (right-click) sets its Dynamic Fog light from the source: torch 30 ft, lantern 60 ft, Light spell 30 ft; full circle, primary, solid edge. The range follows the scene's grid scale.
+- A small badge on the token shows the source while it burns
+- When the light burns out, is put out, or is swapped for a new one, the token's previous light (such as a 3 ft light so a player can see their own token) is restored and the badge removed. Pause all for a table break leaves tokens lit.
+- Runs from the GM's background page, so tokens go dark on time even with no Torchlight panel open. Needs Dynamic Fog in the room; without it only the badge shows.
+
 ## Version 2026-10-15.6
 
 ### Changes

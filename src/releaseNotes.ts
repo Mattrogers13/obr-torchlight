@@ -6,6 +6,15 @@ export interface ReleaseHighlight {
 
 export const releaseHighlights: ReleaseHighlight[] = [
   {
+    version: "2026-10-15.7",
+    date: "October 15, 2026",
+    highlights: [
+      "💡 Lighting a token sets its Dynamic Fog light: torch 30 ft, lantern 60 ft, Light spell 30 ft, full circle, solid edge",
+      "🔥 A badge on the token shows what's lit; it goes away when the light stops",
+      "↩️ The token's previous light comes back when the source goes out, is put out, or is swapped",
+    ]
+  },
+  {
     version: "2026-10-15.6",
     date: "October 15, 2026",
     highlights: [
