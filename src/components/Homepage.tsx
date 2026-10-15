@@ -67,6 +67,11 @@ const Homepage: React.FC = () => {
           time, with a custom number of minutes, or turn-based, with a custom
           number of turns. New lights start burning right away.
         </p>
+        <img
+          src="/img/gm-view.png"
+          alt="GM view: two real-time lights with pause, reset and time adjust buttons"
+          className="mb-2 w-full max-w-sm mx-auto rounded border border-theme"
+        />
         <h3 className="text-xl font-semibold mb-2 mt-4 text-theme">Adjusting Time</h3>
         <p className="mb-2 text-theme-secondary">
           Pause or resume any light, or pause them all for a break. Add or take
@@ -83,6 +88,11 @@ const Homepage: React.FC = () => {
           The GM can show or hide the light list for players with the eye
           button. Players see a read-only list of every light and its time.
         </p>
+        <img
+          src="/img/player-view.png"
+          alt="Player view: read-only list of lights and their remaining time"
+          className="mb-2 w-full max-w-sm mx-auto rounded border border-theme"
+        />
         <h3 className="text-xl font-semibold mb-2 mt-4 text-theme">Data Storage</h3>
         <p className="mb-2 text-theme-secondary">
           Lights are stored in the Owlbear Rodeo room, so they survive reloads
