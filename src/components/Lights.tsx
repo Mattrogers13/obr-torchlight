@@ -53,6 +53,14 @@ const inputClass = "px-3 py-2 border border-theme rounded bg-theme-card text-the
 // Minutes the GM can add (+) or take away (-) on a real-time light.
 const TIME_STEPS = [-10, -5, -1, 1, 5, 10];
 
+// Shown next to a light's name when it isn't burning.
+const StatusTag: React.FC<{ light: Light; now: number }> = ({ light, now }) =>
+  isOut(light, now) ? (
+    <span className="ml-2 text-sm text-theme-danger">Out</span>
+  ) : light.setAside ? (
+    <span className="ml-2 text-sm text-theme-secondary">Paused</span>
+  ) : null;
+
 const LightReadout: React.FC<{ light: Light; now: number }> = ({ light, now }) => {
   const out = isOut(light, now);
   return (
@@ -67,9 +75,8 @@ const LightReadout: React.FC<{ light: Light; now: number }> = ({ light, now }) =
 export const AddLightForm: React.FC<{
   defaultName: string;
   disabled: boolean;
-  limit?: number;
   onAdd: (name: string, kind: LightKind, amount: number) => void;
-}> = ({ defaultName, disabled, limit = LIMITS.maxLights, onAdd }) => {
+}> = ({ defaultName, disabled, onAdd }) => {
   const [name, setName] = useState("");
   const [kind, setKind] = useState<LightKind>("time");
   const [amount, setAmount] = useState(DEFAULT_MINUTES);
@@ -130,7 +137,7 @@ export const AddLightForm: React.FC<{
         </button>
       </div>
       {disabled && (
-        <p className="text-sm text-theme-secondary">Limit of {limit} lights reached.</p>
+        <p className="text-sm text-theme-secondary">Limit of {LIMITS.maxLights} lights reached.</p>
       )}
     </form>
   );
@@ -149,12 +156,12 @@ export const LightRow: React.FC<{
 }> = ({ light, owner, now, onToggle, onReset, onTurn, onAdjustTime, onRemove }) => {
   const out = isOut(light, now);
   return (
-    <li className={`border border-theme rounded p-3 ${out ? "opacity-60" : ""}`}>
+    <li className={`border border-theme rounded p-3 ${out || light.setAside ? "opacity-60" : ""}`}>
       <div className="flex items-center justify-between mb-2">
         <span className="font-semibold text-theme truncate" title={light.name}>
           {light.name}
           {owner && <span className="ml-2 text-sm font-normal text-theme-secondary">({owner})</span>}
-          {out && <span className="ml-2 text-sm text-theme-danger">Out</span>}
+          <StatusTag light={light} now={now} />
         </span>
         <button onClick={onRemove} title="Remove" aria-label={`Remove ${light.name}`} className="text-theme-secondary hover:text-theme text-xl leading-none">
           ×
@@ -212,8 +219,11 @@ export const PlayerLightList: React.FC<{
   ) : (
     <ul className="flex flex-col gap-2">
       {lights.map((light) => (
-        <li key={light.id} className={`flex items-center gap-2 border border-theme rounded p-3 ${isOut(light, now) ? "opacity-60" : ""}`}>
-          <span className="text-theme truncate" title={light.name}>{light.name}</span>
+        <li key={light.id} className={`flex items-center gap-2 border border-theme rounded p-3 ${isOut(light, now) || light.setAside ? "opacity-60" : ""}`}>
+          <span className="text-theme truncate" title={light.name}>
+            {light.name}
+            <StatusTag light={light} now={now} />
+          </span>
           <span className="ml-auto"><LightReadout light={light} now={now} /></span>
           {onRemove && (
             <button onClick={() => onRemove(light)} title="Remove" aria-label={`Remove ${light.name}`} className="text-theme-secondary hover:text-theme text-xl leading-none">

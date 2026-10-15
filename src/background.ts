@@ -43,7 +43,7 @@ OBR.onReady(async () => {
           const role = await OBR.player.getRole();
           const message = await lightFromTokens(
             { gm: role === "GM", playerId: OBR.player.id, playerName: await OBR.player.getName() },
-            context.items.map((item) => item.name),
+            context.items.map((item) => ({ id: item.id, name: item.name })),
             Date.now(),
           );
           notify(message, "INFO");

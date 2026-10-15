@@ -18,10 +18,13 @@ vi.mock("@owlbear-rodeo/sdk", () => ({
 }));
 
 const T0 = Date.UTC(2026, 9, 15, 20, 0, 0);
+const tok = (name: string) => ({ id: `tok-${name}`, name });
 const gm = { gm: true, playerId: "gm1", playerName: "Matt" };
 const kira = { gm: false, playerId: "p1", playerName: "Kira" };
-const shared = () => room.metadata[ROOM_KEY] as { rev: number; lights: { name: string; endsAt: number }[] };
-const mine = () => room.metadata[playerKey("p1")] as { rev: number; ownerName: string; lights: { name: string }[] };
+const shared = () =>
+  room.metadata[ROOM_KEY] as { rev: number; lights: { name: string; endsAt: number | null; setAside: boolean; tokenId: string }[] };
+const mine = () =>
+  room.metadata[playerKey("p1")] as { rev: number; ownerName: string; lights: { name: string; setAside: boolean }[] };
 
 describe("lightFromTokens (token right-click)", () => {
   beforeEach(() => {
@@ -37,41 +40,76 @@ describe("lightFromTokens (token right-click)", () => {
 
   it("GM lights a burning 60-minute torch in the shared state", async () => {
     room.metadata = { [ROOM_KEY]: { rev: 4, showToPlayers: true, lights: [] } };
-    expect(await lightFromTokens(gm, ["Goblin"], T0)).toBe("Lit Goblin's torch (60 min).");
+    expect(await lightFromTokens(gm, [tok("Goblin")], T0)).toBe("Lit Goblin's torch (60 min).");
     expect(shared().rev).toBe(5);
     expect(shared().lights[0]).toMatchObject({ name: "Goblin's torch", endsAt: T0 + 3600_000 });
     expect(shared()).toMatchObject({ showToPlayers: true });
   });
 
   it("lights one per selected token", async () => {
-    await lightFromTokens(gm, ["Kira", "Bo"], T0);
+    await lightFromTokens(gm, [tok("Kira"), tok("Bo")], T0);
     expect(shared().lights.map((l) => l.name)).toEqual(["Kira's torch", "Bo's torch"]);
   });
 
   it("player can't light anything unless the GM allows it", async () => {
-    expect(await lightFromTokens(kira, ["Kira"], T0)).toMatch(/hasn't allowed/);
+    expect(await lightFromTokens(kira, [tok("Kira")], T0)).toMatch(/hasn't allowed/);
     expect(OBR.room.setMetadata).not.toHaveBeenCalled();
   });
 
   it("player lights into their own doc only", async () => {
     room.metadata = { [ROOM_KEY]: { rev: 2, playersCanAdd: true } };
-    await lightFromTokens(kira, ["Kira"], T0);
+    await lightFromTokens(kira, [tok("Kira")], T0);
     expect(mine()).toMatchObject({ rev: 1, ownerName: "Kira", lights: [{ name: "Kira's torch" }] });
     expect(room.metadata[ROOM_KEY]).toEqual({ rev: 2, playersCanAdd: true });
   });
 
-  it("respects the player cap and says what was skipped", async () => {
+  it("players light one at a time: the new light pauses the old", async () => {
     room.metadata = { [ROOM_KEY]: { playersCanAdd: true } };
-    await lightFromTokens(kira, ["A", "B"], T0);
-    expect(await lightFromTokens(kira, ["C", "D"], T0)).toBe(
-      "Lit C's torch (60 min). 1 skipped: limit of 3 lights.",
+    expect(await lightFromTokens(kira, [tok("Kira"), tok("Bo")], T0)).toBe("Lit Kira's torch (60 min).");
+    expect(mine().lights).toHaveLength(1);
+    expect(await lightFromTokens(kira, [tok("Bo")], T0 + 1000)).toBe(
+      "Lit Bo's torch (60 min). Paused Kira's torch.",
     );
-    expect(mine().lights).toHaveLength(3);
-    expect(await lightFromTokens(kira, ["E"], T0)).toBe("Limit of 3 lights reached.");
+    expect(await lightFromTokens(kira, [tok("Ash")], T0 + 2000)).toBe(
+      "Lit Ash's torch (60 min). Paused Bo's torch.",
+    );
+    expect(mine().lights.map((l) => l.name)).toEqual(["Bo's torch", "Ash's torch"]);
   });
 
   it("surfaces a failed save", async () => {
     vi.mocked(OBR.room.setMetadata).mockRejectedValueOnce(new Error("Metadata too large"));
-    await expect(lightFromTokens(gm, ["Kira"], T0)).rejects.toThrow("Metadata too large");
+    await expect(lightFromTokens(gm, [tok("Kira")], T0)).rejects.toThrow("Metadata too large");
+  });
+
+  it("GM relighting a token pauses its current light and starts a new one", async () => {
+    await lightFromTokens(gm, [tok("Kira")], T0);
+    expect(await lightFromTokens(gm, [tok("Kira")], T0 + 60_000)).toBe(
+      "Lit Kira's torch (60 min). Paused Kira's torch.",
+    );
+    expect(shared().lights.map((l) => [l.tokenId, l.setAside, l.endsAt === null])).toEqual([
+      ["tok-Kira", true, true],
+      ["tok-Kira", false, false],
+    ]);
+    // A third light on the same token keeps just the two.
+    await lightFromTokens(gm, [tok("Kira")], T0 + 120_000);
+    expect(shared().lights).toHaveLength(2);
+  });
+
+  it("GM lighting one token leaves other tokens' lights burning", async () => {
+    await lightFromTokens(gm, [tok("Kira"), tok("Bo")], T0);
+    await lightFromTokens(gm, [tok("Kira")], T0 + 1000);
+    const bo = shared().lights.filter((l) => l.tokenId === "tok-Bo");
+    expect(bo).toHaveLength(1);
+    expect(bo[0]).toMatchObject({ setAside: false });
+  });
+
+  it("GM lighting a token pauses a player's light burning on it", async () => {
+    room.metadata = { [ROOM_KEY]: { playersCanAdd: true } };
+    await lightFromTokens(kira, [tok("Kira")], T0);
+    expect(await lightFromTokens(gm, [tok("Kira")], T0 + 1000)).toBe(
+      "Lit Kira's torch (60 min). Paused Kira's torch.",
+    );
+    expect(mine().lights[0]).toMatchObject({ setAside: true });
+    expect(mine().rev).toBe(2);
   });
 });

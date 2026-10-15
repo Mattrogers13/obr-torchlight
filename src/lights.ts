@@ -16,6 +16,10 @@ export interface Light {
   turnsUsed: number;
   // true once the burn-out alert has been sent, so it fires exactly once
   alerted: boolean;
+  // Put out on purpose (a player lit a new light). Paused, keeps its time.
+  setAside: boolean;
+  // Token this light was lit on (right-click), if any. One burning light per token.
+  tokenId: string | null;
 }
 
 export interface RoomState {
@@ -39,7 +43,9 @@ export interface PlayerDoc {
 
 export const LIMITS = {
   maxLights: 20,
-  maxPlayerLights: 3,
+  // A player's current light plus the one they last paused (rules p.84:
+  // lighting a new source extinguishes the old and starts a fresh timer).
+  maxPlayerLights: 2,
   maxNameLength: 40,
   minMinutes: 1,
   maxMinutes: 1440,
@@ -82,6 +88,7 @@ export const createLight = (
   kind: LightKind,
   amount: number,
   now: number,
+  tokenId: string | null = null,
 ): Light => {
   if (kind === "time") {
     const durationSec =
@@ -89,14 +96,14 @@ export const createLight = (
     return {
       id, name, kind, durationSec, remainingSec: durationSec,
       endsAt: now + durationSec * 1000,
-      maxTurns: DEFAULT_TURNS, turnsUsed: 0, alerted: false,
+      maxTurns: DEFAULT_TURNS, turnsUsed: 0, alerted: false, setAside: false, tokenId,
     };
   }
   return {
     id, name, kind,
     durationSec: 0, remainingSec: 0, endsAt: null,
     maxTurns: clampInt(amount, LIMITS.minTurns, LIMITS.maxTurns),
-    turnsUsed: 0, alerted: false,
+    turnsUsed: 0, alerted: false, setAside: false, tokenId,
   };
 };
 
@@ -115,6 +122,9 @@ export const isOut = (light: Light, now: number) =>
     ? remainingSec(light, now) === 0
     : light.turnsUsed >= light.maxTurns;
 
+// Burning or ready to burn: not out and not setAside.
+export const isActive = (light: Light, now: number) => !light.setAside && !isOut(light, now);
+
 export const pause = (light: Light, now: number): Light =>
   isRunning(light)
     ? { ...light, remainingSec: remainingSec(light, now), endsAt: null }
@@ -122,7 +132,7 @@ export const pause = (light: Light, now: number): Light =>
 
 export const resume = (light: Light, now: number): Light =>
   light.kind === "time" && !isRunning(light) && light.remainingSec > 0
-    ? { ...light, endsAt: now + light.remainingSec * 1000 }
+    ? { ...light, endsAt: now + light.remainingSec * 1000, setAside: false }
     : light;
 
 // Back to full and paused, ready to be relit.
@@ -132,10 +142,31 @@ export const reset = (light: Light): Light => ({
   endsAt: null,
   turnsUsed: 0,
   alerted: false,
+  setAside: false,
 });
 
 // GM correction: add or take away time. Keeps running or paused as it was.
 // Adding past full stretches the duration (remainingSec is capped at it).
+export const setAsideLight = (light: Light, now: number): Light => ({ ...pause(light, now), setAside: true });
+
+// A player lights something new: their current light is paused and kept
+// alongside the new one; anything older is dropped.
+export const replacePlayerLight = (lights: Light[], fresh: Light, now: number): Light[] => {
+  const current = [...lights].reverse().find((l) => isActive(l, now));
+  const keep = current ? setAsideLight(current, now) : lights[lights.length - 1];
+  return keep ? [keep, fresh] : [fresh];
+};
+
+// Same rule per token: lighting a token pauses its current light and keeps
+// only that one alongside the new light. Lights on other tokens, or on none,
+// are untouched.
+export const replaceTokenLight = (lights: Light[], fresh: Light, now: number): Light[] => {
+  if (!fresh.tokenId) return [...lights, fresh];
+  const onToken = lights.filter((l) => l.tokenId === fresh.tokenId);
+  const others = lights.filter((l) => l.tokenId !== fresh.tokenId);
+  return [...others, ...replacePlayerLight(onToken, fresh, now)];
+};
+
 export const adjustTime = (light: Light, deltaSec: number, now: number): Light => {
   if (light.kind !== "time") return light;
   const left = clampInt(remainingSec(light, now) + deltaSec, 0, LIMITS.maxMinutes * 60);
@@ -174,6 +205,9 @@ const isObject = (v: unknown): v is Record<string, unknown> =>
 const finite = (v: unknown): v is number =>
   typeof v === "number" && Number.isFinite(v);
 
+const parseTokenId = (v: unknown) =>
+  typeof v === "string" && v.length > 0 && v.length <= 64 ? v : null;
+
 export const parseLight = (raw: unknown): Light | null => {
   if (!isObject(raw)) return null;
   const { id, name, kind } = raw;
@@ -193,6 +227,8 @@ export const parseLight = (raw: unknown): Light | null => {
       endsAt: raw.endsAt === null ? null : raw.endsAt,
       maxTurns: DEFAULT_TURNS, turnsUsed: 0,
       alerted: raw.alerted === true,
+      setAside: raw.setAside === true,
+      tokenId: parseTokenId(raw.tokenId),
     };
   }
 
@@ -203,6 +239,8 @@ export const parseLight = (raw: unknown): Light | null => {
     durationSec: 0, remainingSec: 0, endsAt: null,
     maxTurns, turnsUsed: clampInt(raw.turnsUsed, 0, maxTurns),
     alerted: raw.alerted === true,
+    setAside: raw.setAside === true,
+    tokenId: parseTokenId(raw.tokenId),
   };
 };
 

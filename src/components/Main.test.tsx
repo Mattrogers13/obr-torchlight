@@ -271,13 +271,15 @@ describe("Main (Torchlight)", () => {
       expect(vi.mocked(OBR.room.setMetadata).mock.calls[0][0]).not.toHaveProperty(ROOM_KEY);
     });
 
-    it("caps players at their light limit", async () => {
+    it("a player's new light pauses their current one; the list keeps two", async () => {
       room.metadata = { [ROOM_KEY]: { playersCanAdd: true } };
       render(<Main player={true} />);
       const light = await screen.findByText("Light");
-      for (let i = 0; i < 5; i++) fireEvent.click(light);
-      await waitFor(() => expect(mineStored()?.lights).toHaveLength(3));
-      expect(screen.getByText("Limit of 3 lights reached.")).toBeInTheDocument();
+      for (let i = 0; i < 4; i++) fireEvent.click(light);
+      await waitFor(() => expect(mineStored()?.lights).toHaveLength(2));
+      expect(mineStored()!.lights.map((l) => l.setAside)).toEqual([true, false]);
+      expect(screen.getByText("Paused")).toBeInTheDocument();
+      expect(screen.getByText(/Lighting a new one pauses/)).toBeInTheDocument();
     });
 
     it("a player can remove their own light only when the GM allows it", async () => {
@@ -379,6 +381,30 @@ describe("Main (Torchlight)", () => {
       expect(await screen.findByText("(Bo)")).toBeInTheDocument();
       await addPlayerLight({ rev: 2, ownerName: "Bo", lights: [] });
       expect(OBR.notification.show).toHaveBeenCalledWith("Bo removed Lantern", "INFO");
+    });
+
+    it("tells the GM when a player swaps lights, without a false 'removed'", async () => {
+      const old = { ...turnTorch(0), id: "old", name: "Old torch", setAside: true };
+      const torch = { ...burnedOutTorch(false), id: "t1", endsAt: Date.now() + 60_000 };
+      room.metadata = { [playerKey("p2")]: { rev: 1, ownerName: "Bo", lights: [old, torch] } };
+      render(<Main player={false} />);
+      expect(await screen.findByText("Old torch")).toBeInTheDocument();
+      const lantern = { ...turnTorch(0), id: "new", name: "Bo's lantern" };
+      await addPlayerLight({ rev: 2, ownerName: "Bo", lights: [{ ...torch, setAside: true, endsAt: null }, lantern] });
+      expect(OBR.notification.show).toHaveBeenCalledWith("Bo lit Bo's lantern", "INFO");
+      expect(OBR.notification.show).toHaveBeenCalledWith("Bo paused Kira's torch", "INFO");
+      expect(OBR.notification.show).not.toHaveBeenCalledWith("Bo removed Old torch", "INFO");
+    });
+
+    it("Resume all doesn't relight a paused light", async () => {
+      const paused = { ...burnedOutTorch(false), id: "p", name: "Paused", endsAt: null, remainingSec: 30 };
+      room.metadata = {
+        [ROOM_KEY]: { lights: [paused, { ...paused, id: "s", name: "Gone", setAside: true }] },
+      };
+      render(<Main player={false} />);
+      fireEvent.click(await screen.findByText("Resume all"));
+      await waitFor(() => expect(stored().lights[0].endsAt).not.toBeNull());
+      expect(stored().lights[1]).toMatchObject({ endsAt: null, setAside: true });
     });
 
     it("doesn't alert the GM about their own removal of a player light", async () => {

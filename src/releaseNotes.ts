@@ -6,6 +6,15 @@ export interface ReleaseHighlight {
 
 export const releaseHighlights: ReleaseHighlight[] = [
   {
+    version: "2026-10-15.3",
+    date: "October 15, 2026",
+    highlights: [
+      "🕯️ Players carry one light at a time: lighting a new one pauses the old (core rules p.84)",
+      "📋 Each player's list keeps their current light and the one they last paused",
+      "🖱️ Right-clicking a token that already has a light pauses it and starts the new one",
+    ]
+  },
+  {
     version: "2026-10-15.2",
     date: "October 15, 2026",
     highlights: [
