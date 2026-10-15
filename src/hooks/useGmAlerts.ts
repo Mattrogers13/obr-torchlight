@@ -127,19 +127,19 @@ export const useGmAlerts = ({
       const burned = keys.length > 0 ? pruneBurnedOut([...s.burnedOut, ...keys], liveIds) : s.burnedOut;
       return lights === s.lights && burned === s.burnedOut ? s : { ...s, lights, burnedOut: burned };
     }).then((saved) => {
-      // Saved: nothing to do. (The write applies locally at once, so the mark
-      // is already cleared on the next render; if another writer overwrites
-      // the record later, it's redone on that change.)
-      if (saved) return;
+      if (saved) {
+        // Tell the room once the burn-out is recorded (like Put out), and only
+        // once per burn-out even if recording it took a retry.
+        const fresh = burnedOut.filter((e) => !broadcast.current.has(e.light.id));
+        fresh.forEach((e) => broadcast.current.add(e.light.id));
+        broadcastLightOut(fresh.map((e) => e.light.name));
+        return;
+      }
       // Failed: retry after a pause, never in a tight loop.
       ids.forEach((id) => recording.current.set(id, Date.now() + BURN_OUT_RETRY_MS));
       clearTimeout(retryTimer.current);
       retryTimer.current = setTimeout(() => setRetryTick((t) => t + 1), BURN_OUT_RETRY_MS);
     });
-
-    const fresh = burnedOut.filter((e) => !broadcast.current.has(e.light.id));
-    fresh.forEach((e) => broadcast.current.add(e.light.id));
-    broadcastLightOut(fresh.map((e) => e.light.name));
   }, [gm, loaded, entries, state.burnedOut, now, update, retryTick]);
 
   return { removedByMe, restoredAfterFailure };
