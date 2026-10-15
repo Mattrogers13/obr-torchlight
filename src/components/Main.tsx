@@ -252,35 +252,32 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
       state.playersCanRemove &&
       updatePlayer(myId, (d) => ({ ...d, lights: d.lights.filter((l) => l.id !== light.id) }));
 
+    // One list: the player's own lights first, then everyone else's when the
+    // GM shares them. Only their own can show a remove button.
+    const visible = state.showToPlayers ? [...mine, ...others] : mine;
+
     return (
       <div className="p-4">
         <h1 className="text-2xl font-bold mb-4 text-theme">Torchlight</h1>
-        {(state.playersCanAdd || mine.length > 0) && (
-          <div className="bg-theme-card rounded-lg border border-theme p-4 mt-4">
-            <h2 className="text-lg font-semibold mb-3 text-theme">Your Lights</h2>
-            {state.playersCanAdd && (
-              <>
-                <AddLightForm defaultName={ownName} disabled={false} onAdd={addOwnLight} />
-                {burning && (
-                  <p className="-mt-2 mb-4 text-sm text-theme-secondary">
-                    Lighting a new one pauses {burning.name}.
-                  </p>
-                )}
-              </>
-            )}
-            <PlayerLightList
-              lights={mine}
-              now={now}
-              onRemove={state.playersCanRemove ? removeOwnLight : undefined}
-            />
-          </div>
-        )}
-        {state.showToPlayers && (
-          <div className="bg-theme-card rounded-lg border border-theme p-4 mt-4">
-            <h2 className="text-lg font-semibold mb-3 text-theme">Light Sources</h2>
-            <PlayerLightList lights={others} now={now} />
-          </div>
-        )}
+        <div className="bg-theme-card rounded-lg border border-theme p-4 mt-4">
+          <h2 className="text-lg font-semibold mb-3 text-theme">Light Sources</h2>
+          {state.playersCanAdd && (
+            <>
+              <AddLightForm defaultName={ownName} disabled={false} onAdd={addOwnLight} />
+              {burning && (
+                <p className="-mt-2 mb-4 text-sm text-theme-secondary">
+                  Lighting a new one pauses {burning.name}.
+                </p>
+              )}
+            </>
+          )}
+          <PlayerLightList
+            lights={visible}
+            now={now}
+            onRemove={state.playersCanRemove ? removeOwnLight : undefined}
+            removable={new Set(mine.map((l) => l.id))}
+          />
+        </div>
       </div>
     );
   }

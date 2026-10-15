@@ -1,7 +1,7 @@
 {
   "name": "torchlight",
   "private": true,
-  "version": "2026-10-15.4",
+  "version": "2026-10-15.5",
   "type": "module",
   "scripts": {
     "dev": "vite",

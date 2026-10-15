@@ -1,5 +1,12 @@
 # Release Notes
 
+## Version 2026-10-15.5
+
+### Changes
+
+- Token right-click menu: the three light entries are now one "Torchlight" entry that opens a small submenu (Light torch / Light lantern / Cast Light)
+- Players' panel shows a single "Light Sources" list instead of separate "Your Lights" and "Light Sources" cards: their own lights first, then everyone else's when the GM shares them. Only their own can show a remove button.
+
 ## Version 2026-10-15.4
 
 ### Features
