@@ -57,9 +57,12 @@ The app has two distinct entry modes controlled by URL parameters:
 
 Entry point: `src/main.tsx`
 
-A second page, `background.html` → `src/background.ts` (manifest `background_url: "/background"`; Cloudflare 307s `.html` URLs to the extensionless path), runs while Torchlight is enabled in the room, panel open or not. It registers one "Torchlight" token right-click entry whose embedded submenu is a third page, `menu.html` → `src/menu.ts` (embed url `/menu`, plain DOM, no React): Light torch / Light lantern / Cast Light. Both write through `src/lightFromTokens.ts` (same permission rules as the panel). Keep it free of React imports; metadata keys live in `util/constants.ts` for that reason.
+A second page, `background.html` → `src/background.ts` (manifest `background_url: "/background"`; Cloudflare 307s `.html` URLs to the extensionless path), runs while Torchlight is enabled in the room, panel open or not. It registers one "Torchlight" token right-click entry whose embedded submenu is a third page, `menu.html` → `src/menu.ts` (embed url `/menu`, plain DOM, no React): Light torch / Light lantern / Cast Light. Both write through `src/lightFromTokens.ts` (same permission rules as the panel). Keep it free of React imports; metadata keys live in `src/constants.ts` for that reason.
 
-On the GM's client the background page also runs `src/tokenSync.ts`: every token with an active linked light (`tokenId`) gets that source's Dynamic Fog light (`rodeo.owlbear.dynamic-fog/light`: range from `SOURCES` converted with the grid scale, full circle, PRIMARY, solid edge `falloff: 0.2`) plus a badge attachment (`public/img/badge-<source>.png`). Item images must be PNG/JPG/WebP, never SVG: Chrome can't decode SVG into Owlbear's canvas textures and draws a black square. Badge sources are `art/badges/*.svg`; regenerate a PNG with headless Chrome at 128×128 on a transparent background (ImageMagick drops stroked SVG paths). Badges whose image URL isn't current are replaced automatically. The token's previous light (e.g. the GM's 3 ft light so players can see their own token) is saved under `${ID}/token` and restored when the light stops: burns out, put out, or swapped. A Pause all leaves tokens lit. It runs on room changes, scene load, and a timer at the next burn-out, so it works with no panel open. The decision is the pure `planSync` (tested); the rest is SDK calls. Player docs can be forged, so a player's light only reaches a token that is visible and that the room's permissions would let that player edit (`playerMayLight`: `CHARACTER_UPDATE`, plus `CHARACTER_OWNER_ONLY` → `createdUserId`); otherwise a tampered doc could light a hidden monster through the GM's client. Saved lights are reduced to known Dynamic Fog fields (`parseDfLight`). Needs Dynamic Fog in the room to actually cast light; without it only the badge shows.
+On the GM's client the background page also runs `src/tokenSync.ts`: tokens with an active linked light get that source's Dynamic Fog light plus a badge, and get their previous light back when it stops. Details (light shape, badge regeneration, `planSync`, when it runs): `docs/token-sync.md`. Rules not to break:
+
+- Raster images are WebP (badges lossless, `mime: "image/webp"`). Item images must never be SVG (Chrome draws a black square in Owlbear's canvas). Exception: the manifest icon stays `logo.png` until Owlbear WebP support is confirmed.
+- Player docs can be forged: a player's light only reaches a token that is visible and that player could edit (`playerMayLight`), or a tampered doc could light a hidden monster through the GM's client.
 
 The plugin ID `"io.github.mattrogers13.torchlight"` is exported as `ID` from `src/constants.ts` (with the room metadata keys; `components/util/constants.ts` holds only route paths) and prefixes the room metadata key and broadcast channel.
 
@@ -99,12 +102,9 @@ Route paths are defined in `src/components/util/constants.ts`.
 - **Lights.tsx**: Add-light form, GM light rows, bulk actions, Active-only filter, and the player light list
 - **SPA.tsx**: Sets up router, detects player role, syncs OBR theme to `dark` CSS class
 - **Navbar.tsx**: Tab navigation (Main / About), renders the `WhatsNew` modal, shows dev mode banner
-- **About.tsx**: Hosts `ThemeSelector`, repo link, credit line, and version display (`VERSION` from `src/version.ts`, read from manifest.json at build time; nothing fetches the manifest at runtime)
+- **About.tsx**: Hosts `ThemeSelector`, repo link, credit line, and version display (`VERSION` from `src/version.ts`, read from manifest.json at build time; nothing fetches the manifest at runtime). On labeled (dev/preview) builds also renders `DebugInfo.tsx`
 - **ThemeSelector.tsx**: UI for switching between the 4 color palettes defined in `src/themes.ts`
 - **WhatsNew.tsx**: Modal that shows release highlights when the build's version differs from the one stored in localStorage
-- **PluginGate.tsx**: Waits for OBR SDK to be ready before rendering children
-- **OBRLoading.tsx**: Loading state shown while OBR initialises
-- **SceneNotReady.tsx**: Shown when OBR scene is not yet ready
 - **PlayerView.tsx**: Placeholder view shown to players when GM has not enabled "show to players"
 - **Homepage.tsx**: Standalone landing page (non-plugin mode)
 
@@ -129,6 +129,7 @@ localStorage keys (per browser, not shared). Always go through `src/storage.ts` 
 - `torchlight-theme` — user's selected color palette (useTheme.ts)
 - `torchlight-last-seen-version` — last version seen, drives WhatsNew modal (Navbar.tsx)
 - `torchlight-active-only` — "Active lights only" list filter (useActiveOnly.ts)
+- `dev-mode` — `"true"` shows the dev banner (`isDevMode` in utils.ts, Navbar.tsx)
 
 ### Deployment
 
