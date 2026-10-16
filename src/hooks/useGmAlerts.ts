@@ -91,9 +91,6 @@ export const useGmAlerts = ({
   const recording = useRef(new Map<string, number>());
   // Burn-outs already broadcast this session (a retried record mustn't re-alert).
   const broadcast = useRef(new Set<string>());
-  // The lights as of the latest render, for checks when a save resolves.
-  const latestEntries = useRef(entries);
-  latestEntries.current = entries;
   // Wakes this check when the earliest pending retry is due; nothing else may
   // be ticking then.
   const [retryTick, setRetryTick] = useState(0);
@@ -153,44 +150,23 @@ export const useGmAlerts = ({
     const retryAt = Date.now() + BURN_OUT_RETRY_MS;
     burnedOut.forEach((e) => recording.current.set(e.light.id, retryAt));
     const gmIds = new Set(burnedOut.filter((e) => e.ownerId === null).map((e) => e.light.id));
-    // Ids this write actually records. Another GM may have recorded some
-    // already; then this write is a no-op for them and they mustn't be
-    // announced twice.
-    const recordedNow = new Set<string>();
     update((s) => {
-      const lights = mapLights(s.lights, (l) => {
-        if (!gmIds.has(l.id) || l.alerted) return l;
-        recordedNow.add(l.id);
-        return { ...pause(l, Date.now()), alerted: true };
-      });
+      const lights = mapLights(s.lights, (l) =>
+        gmIds.has(l.id) && !l.alerted ? { ...pause(l, Date.now()), alerted: true } : l,
+      );
       const had = new Set(s.burnedOut);
-      const added = burnedOut.filter((e) => e.ownerId !== null && !had.has(burnKey(e.light)));
-      added.forEach((e) => recordedNow.add(e.light.id));
-      const burned =
-        added.length > 0
-          ? pruneBurnedOut([...s.burnedOut, ...added.map((e) => burnKey(e.light))], liveIds)
-          : s.burnedOut;
+      const added = burnedOut
+        .filter((e) => e.ownerId !== null && !had.has(burnKey(e.light)))
+        .map((e) => burnKey(e.light));
+      const burned = added.length > 0 ? pruneBurnedOut([...s.burnedOut, ...added], liveIds) : s.burnedOut;
       return lights === s.lights && burned === s.burnedOut ? s : { ...s, lights, burnedOut: burned };
-    }).then((saved) => {
-      // Failed: retried at retryAt (scheduleWake below).
-      if (!saved) return;
-      // Tell the room once the burn-out is recorded (like Put out): only what
-      // this write recorded, only once, and only if it's still the same
-      // burn-out (not re-armed meanwhile: burnKey would have changed).
-      const current = new Map(latestEntries.current.map((x) => [x.light.id, x.light]));
-      const fresh = burnedOut.filter((e) => {
-        const light = current.get(e.light.id);
-        return (
-          recordedNow.has(e.light.id) &&
-          !broadcast.current.has(e.light.id) &&
-          !!light &&
-          isOut(light, Date.now()) &&
-          burnKey(light) === burnKey(e.light)
-        );
-      });
-      fresh.forEach((e) => broadcast.current.add(e.light.id));
-      broadcastLightOut(fresh.map((e) => e.light.name));
     });
+    // Tell the room now, once per burn-out, whether or not the record saves:
+    // a full room (16 kB) can't silence it. A record that never saves may get
+    // announced again by a GM panel opened later; a repeat beats silence.
+    const fresh = burnedOut.filter((e) => !broadcast.current.has(e.light.id));
+    fresh.forEach((e) => broadcast.current.add(e.light.id));
+    broadcastLightOut(fresh.map((e) => e.light.name));
     scheduleWake(new Set(burnedOut.map((e) => e.light.id)));
   }, [gm, loaded, entries, state.burnedOut, now, update, retryTick]);
 

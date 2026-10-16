@@ -6,6 +6,15 @@ export interface ReleaseHighlight {
 
 export const releaseHighlights: ReleaseHighlight[] = [
   {
+    version: "2026-10-15.8",
+    date: "October 15, 2026",
+    highlights: [
+      "🔄 Steadier syncing between the GM, players and the right-click menu: changes made at the same moment no longer get lost or undone",
+      "🛡️ A failed save is undone on screen, and a panel that can't reach the room waits instead of starting empty",
+      "💨 \"Went out!\" alerts go out even when the room's storage is full",
+    ]
+  },
+  {
     version: "2026-10-15.7",
     date: "October 15, 2026",
     highlights: [

@@ -1,5 +1,23 @@
 # Release Notes
 
+## Version 2026-10-15.8
+
+Reliability release from repeated code reviews.
+
+### Fixes
+
+- Syncing between the GM panel, players' panels and the right-click menu: a write is labeled with who sent it, so one client's change can't be mistaken for an old copy of another's and dropped. While a client's own save is in flight it ignores room changes, then re-reads the room once the save settles.
+- A failed save (e.g. the room's 16 kB storage is full) is undone on screen instead of staying there looking saved.
+- A panel whose first room read fails stays on "Loading…" and retries, instead of starting empty, where the next edit could have overwritten every light in the room. Same when switching tabs mid-save.
+- "Went out!" alerts fire at burn-out even if recording the burn-out can't be saved; still once per burn-out.
+- The right-click menu and token lights retry after Owlbear hiccups, with back-off; a role lookup that keeps failing now says so.
+- Token sync can't be spun by a tampered timer, and skips other extensions' room changes.
+
+### Changes
+
+- Each storage slot still carries the old `rev` number so panels on earlier builds keep accepting new writes; it will be removed after 2026-11-15.
+
+
 ## Version 2026-10-15.7
 
 ### Features

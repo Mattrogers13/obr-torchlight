@@ -8,7 +8,7 @@ import Navbar from "./Navbar";
 import { paths } from "./util/constants";
 import { useTheme } from "../hooks/useTheme";
 import { ColorMode } from "../themes";
-import { errorMessage } from "../utils";
+import { errorMessage, notify } from "../utils";
 
 export default function SPA() {
   // Unknown until OBR reports it, so a player never briefly runs the GM view.
@@ -42,6 +42,7 @@ export default function SPA() {
     let gotRole = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let wait = 2000;
+    let failures = 0;
     const loadRole = () =>
       OBR.player
         .getRole()
@@ -51,6 +52,8 @@ export default function SPA() {
           // player.onChange may have delivered the role meanwhile.
           if (!alive || gotRole) return;
           console.warn(`Torchlight couldn't get the player role, retrying: ${errorMessage(err)}`);
+          // A blank panel needs an explanation once it's clearly not a blip.
+          if (++failures === 3) notify(`Torchlight can't reach Owlbear yet: ${errorMessage(err)}`, "ERROR");
           retry = setTimeout(loadRole, wait);
           wait = Math.min(wait * 2, 30_000);
         });

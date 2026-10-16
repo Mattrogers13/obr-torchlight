@@ -12,7 +12,7 @@ import { errorMessage, onRoleChange } from "./utils";
 // the timers (tokenSync.ts).
 
 const MENU_ID = `${ID}/light-menu`;
-// How soon to retry after Owlbear fails to add or remove the menu.
+// First retry after Owlbear fails to add or remove the menu (then doubling).
 const MENU_RETRY_MS = 5000;
 // Height of the embedded submenu: 3 rows of 36px plus 8px padding (menu.html).
 const MENU_HEIGHT = 116;
@@ -40,6 +40,7 @@ OBR.onReady(async () => {
   // so a failed call is retried instead of sticking.
   let shown: boolean | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let retryWait = MENU_RETRY_MS;
   // The two inputs, kept current by the listeners below, so a sync needs no
   // reads of its own.
   let gm = false;
@@ -53,6 +54,7 @@ OBR.onReady(async () => {
     else await OBR.contextMenu.remove(MENU_ID);
     shown = allowed;
     clearTimeout(retryTimer); // a pending retry is no longer needed
+    retryWait = MENU_RETRY_MS;
   };
 
   // One sync at a time; changes that arrive meanwhile collapse into one rerun.
@@ -70,9 +72,11 @@ OBR.onReady(async () => {
         await sync().catch((err) => {
           shown = null;
           console.error(`Torchlight menu sync failed: ${errorMessage(err)}`);
-          // The triggers below only fire on real changes, so retry on a timer.
+          // The triggers below only fire on real changes, so retry on a timer,
+          // backing off up to 5 min.
           clearTimeout(retryTimer);
-          retryTimer = setTimeout(() => requestSync(), MENU_RETRY_MS);
+          retryTimer = setTimeout(() => requestSync(), retryWait);
+          retryWait = Math.min(retryWait * 2, 5 * 60_000);
         });
       } while (pending);
     } finally {

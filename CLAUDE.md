@@ -113,7 +113,7 @@ Timer logic is pure functions in `src/lights.ts` (every time calc takes `now`, e
 - Everything read from room metadata goes through `parseRoomState` / `parsePlayerDocs`: any client or extension can write it.
 - Permissions are client-side only; a tampering client can write any key.
 - Staleness is by `writer`/`seq` stamps. Prepare every write with `restamp` (a copied doc that keeps another client's stamp is discarded as that client's echo).
-- `rev` is still written for panels on builds before 2026-10-15; remove it after 2026-11-15.
+- `rev` is still written for panels on builds up to 2026-10-15.7; remove it after 2026-11-15.
 - Never unlock the panel before the first room read lands (an empty state written back wipes the room).
 - Multi-player GM actions are one `updateLights` write. Edit with `mapLights`, not `.map`.
 - The GM never writes a player's doc just to mark a burn-out (`burnedOut` lives in shared state).

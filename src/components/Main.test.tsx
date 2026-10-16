@@ -847,21 +847,22 @@ describe("Main (Torchlight)", () => {
       expect(screen.queryByText("2 / 10")).not.toBeInTheDocument();
     });
 
-    it("a burn-out is announced once it's recorded, not before", async () => {
+    it("a burn-out is announced at once even if its record can't be saved, and only once", async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       try {
         room.metadata = { [ROOM_KEY]: { lights: [burnedOutTorch(false)] } };
-        room.failWrites = true;
+        room.failWrites = true; // e.g. the room is at its 16 kB cap
         render(<Main player={false} />);
         await waitFor(() =>
-          expect(OBR.notification.show).toHaveBeenCalledWith("Torchlight couldn't save: Metadata too large", "ERROR"),
+          expect(OBR.broadcast.sendMessage).toHaveBeenCalledWith(LIGHT_OUT_CHANNEL, ["Kira's torch"], {
+            destination: "ALL",
+          }),
         );
-        expect(OBR.broadcast.sendMessage).not.toHaveBeenCalled();
-        room.failWrites = false;
+        // The record keeps retrying; the alert doesn't repeat.
         await act(async () => {
-          await vi.advanceTimersByTimeAsync(BURN_OUT_RETRY_MS + 1500);
+          await vi.advanceTimersByTimeAsync(BURN_OUT_RETRY_MS * 2 + 1500);
         });
-        await waitFor(() => expect(OBR.broadcast.sendMessage).toHaveBeenCalledTimes(1));
+        expect(OBR.broadcast.sendMessage).toHaveBeenCalledTimes(1);
       } finally {
         vi.useRealTimers();
       }
@@ -881,19 +882,6 @@ describe("Main (Torchlight)", () => {
       });
       await act(async () => resolveSnapshot(before)); // the older snapshot lands last
       expect(await screen.findByText("Lantern", { selector: "li span" })).toBeInTheDocument();
-    });
-  });
-
-  describe("eighth review fixes", () => {
-    it("a light reset while its burn-out record is still saving isn't announced", async () => {
-      room.metadata = { [ROOM_KEY]: { lights: [burnedOutTorch(false)] } };
-      room.deferWrites = true;
-      render(<Main player={false} />);
-      await screen.findByText("Kira's torch");
-      await waitFor(() => expect(room.writeQueue.length).toBeGreaterThan(0)); // record in flight
-      fireEvent.click(screen.getByTitle("Reset")); // re-armed before it lands
-      while (room.writeQueue.length) await flushWrite();
-      expect(OBR.broadcast.sendMessage).not.toHaveBeenCalled();
     });
   });
 

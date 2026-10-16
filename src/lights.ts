@@ -48,7 +48,7 @@ export interface Light {
 export interface Stamp {
   writer: string;
   seq: number;
-  // Compatibility only, not used for staleness: builds before 2026-10-15
+  // Compatibility only, not used for staleness: builds up to 2026-10-15.7
   // ignore a doc whose rev is below the one they hold, so every write still
   // bumps it. TODO(2026-11-15): remove once those builds are gone.
   rev: number;
