@@ -16,7 +16,7 @@ const Homepage: React.FC = () => {
     <div className="max-w-4xl mx-auto px-4 py-8">
       <div className="max-w-2xl mx-auto">
         <img
-          src="/img/hero.png"
+          src="/img/hero.webp"
           alt="Torchlight"
           className="mb-4 w-full max-w-full"
         />
@@ -60,7 +60,7 @@ const Homepage: React.FC = () => {
           number of turns. New lights start burning right away.
         </p>
         <img
-          src="/img/gm-view.png"
+          src="/img/gm-view.webp"
           alt="GM view: two real-time lights with pause, reset and time adjust buttons"
           className="mb-2 w-full max-w-sm mx-auto rounded border border-theme"
         />
@@ -100,7 +100,7 @@ const Homepage: React.FC = () => {
           button. Players see a read-only list of every light and its time.
         </p>
         <img
-          src="/img/player-view.png"
+          src="/img/player-view.webp"
           alt="Player view: read-only list of lights and their remaining time"
           className="mb-2 w-full max-w-sm mx-auto rounded border border-theme"
         />
