@@ -15,11 +15,6 @@ const Homepage: React.FC = () => {
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
       <div className="max-w-2xl mx-auto">
-        <img
-          src="/img/hero.webp"
-          alt="Torchlight"
-          className="mb-4 w-full max-w-full"
-        />
         <h1 className="text-3xl font-bold mb-4 text-theme">Torchlight</h1>
         <div className="mb-4 text-theme-secondary">
           <em>

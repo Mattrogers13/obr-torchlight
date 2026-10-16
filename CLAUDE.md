@@ -162,7 +162,7 @@ Two independent layers:
 
 ### Icons
 
-Inline SVG only (no icon library). Right-click menu and token badge icons live in `public/img/`.
+Inline SVG only (no icon library). Right-click menu and token badge icons live in `public/img/`. The toolbar action icon reuses the white `torch-menu.svg`. The logo source is `art/icon/logo.svg`: copy it to `public/img/logo.svg` (favicon) and render `public/img/logo.png` (manifest icon) at 256×256 with headless Chrome, as for badges. No upstream Shadow Crawler artwork remains; don't reintroduce it.
 
 ### Analytics
 

@@ -9,7 +9,7 @@
   "description": "Torch and light source timers for Shadowdark, shared with your players. Based on Shadow Crawler by Alvaro Cavalcanti.",
   "action": {
     "title": "Torchlight",
-    "icon": "/img/icon.svg",
+    "icon": "/img/torch-menu.svg",
     "popover": "/",
     "height": 600,
     "width": 400
