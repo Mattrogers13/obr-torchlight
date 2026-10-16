@@ -10,6 +10,7 @@ import {
   emptyPlayerDoc,
   emptyRoomState,
   parsePlayerDocs,
+  newWriterId,
   parseRoomState,
   restamp,
   torchlightSignature,
@@ -31,24 +32,20 @@ export type PlayerDocs = Record<string, PlayerDoc>;
 // Nothing here trusts a seq read from the room beyond comparing it with what
 // we sent. State is module-level so it survives the panel remounting (tab
 // switches, scene changes); only one useRoomState is ever mounted.
-const WRITER = crypto.randomUUID().slice(0, 8);
+const WRITER = newWriterId();
 let lastSeq = 0;
-let inFlight = 0; // our writes not yet settled
+let inFlight = 0; // our saves not yet settled
 const lastSent = new Map<string, number>(); // doc key -> seq of our latest write
 
 // The mounted panel's re-read. A save from a panel that has since unmounted
 // (tab switch mid-write) re-reads into the one that's open now.
-let mountedResync: (() => void) | null = null;
+let mountedResync: (() => unknown) | null = null;
 
-const send = (key: string) => {
+// Stamp a doc we're about to write (see restamp).
+const stampFor = (key: string) => {
   lastSeq += 1;
   lastSent.set(key, lastSeq);
-  inFlight += 1;
   return { writer: WRITER, seq: lastSeq };
-};
-const settle = (writes: number) => {
-  inFlight = Math.max(0, inFlight - writes);
-  if (inFlight === 0) mountedResync?.(); // step 3
 };
 
 // Step 2, for one doc in an event taken by step 1.
@@ -92,23 +89,27 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
     lastSignature.current = signature;
     const keep = (key: string, doc: Stamp) => from === "event" && isOwnOlderEcho(key, doc);
 
+    // A doc equal to the one held keeps the held object, so an unchanged
+    // re-read (the usual case after a save) doesn't re-render anything.
+    const same = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b);
+
     const next = parseRoomState(metadata[ROOM_KEY]);
-    if (!keep(ROOM_KEY, next) || !haveState.current) {
+    if ((!keep(ROOM_KEY, next) || !haveState.current) && !same(next, latest.current)) {
       latest.current = next;
       setState(next);
     }
     const incoming = parsePlayerDocs(metadata);
     const docs: PlayerDocs = {};
+    let changed = Object.keys(incoming).length !== Object.keys(latestDocs.current).length;
     for (const [id, doc] of Object.entries(incoming)) {
       const held = latestDocs.current[id];
-      docs[id] = held && keep(playerKey(id), doc) ? held : doc;
+      docs[id] = held && (keep(playerKey(id), doc) || same(doc, held)) ? held : doc;
+      if (docs[id] !== held) changed = true;
     }
-    // A doc we just created may not be in the room yet; keep it until it is.
-    if (inFlight > 0) {
-      for (const [id, held] of Object.entries(latestDocs.current)) if (!(id in docs)) docs[id] = held;
+    if (changed) {
+      latestDocs.current = docs;
+      setPlayerDocs(docs);
     }
-    latestDocs.current = docs;
-    setPlayerDocs(docs);
     // A full room picture (an event carries all of room metadata too).
     if (!haveState.current) {
       haveState.current = true;
@@ -128,13 +129,13 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
     if (!haveState.current || (inFlight === 0 && applied.current === asked)) apply(metadata, "snapshot");
   }, [apply]);
 
-  // One re-read loop at a time. Requests while it runs or waits just mark it
-  // to read again once more; failures back off up to 30 s and the user is
-  // told once. Until the first read lands the panel stays on "Loading…":
-  // unlocking with an empty state would let the next edit wipe the room.
+  // One re-read at a time; a request while one is running asks for one more
+  // pass. Failures back off up to 30 s and the user is told once. Until the
+  // first read lands the panel stays on "Loading…": unlocking with an empty
+  // state would let the next edit wipe the room.
   const loop = useRef({ running: false, again: false, wait: 1000, told: false });
   const retry = useRef<ReturnType<typeof setTimeout>>();
-  const requestResync = useCallback(() => {
+  const requestResync = useCallback(async () => {
     const l = loop.current;
     if (l.running) {
       l.again = true;
@@ -142,49 +143,44 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
     }
     l.running = true;
     l.again = false;
-    readOnce()
-      .then(() => {
-        l.wait = 1000;
-        l.told = false;
-        return true;
-      })
-      .catch((err) => {
-        if (!l.told) notify(`Torchlight couldn't load room state: ${errorMessage(err)}`, "ERROR");
-        l.told = true;
-        l.wait = Math.min(l.wait * 2, 30_000);
-        return false;
-      })
-      .then((done) => {
-        l.running = false;
-        if (!mounted.current) return;
-        if (!done) {
-          clearTimeout(retry.current);
-          retry.current = setTimeout(requestResync, l.wait);
-        } else if (l.again) {
-          requestResync();
-        }
-      });
+    try {
+      await readOnce();
+      l.wait = 1000;
+      l.told = false;
+    } catch (err) {
+      if (!l.told) notify(`Torchlight couldn't load room state: ${errorMessage(err)}`, "ERROR");
+      l.told = true;
+      l.wait = Math.min(l.wait * 2, 30_000);
+      if (mounted.current) {
+        clearTimeout(retry.current);
+        retry.current = setTimeout(requestResync, l.wait);
+      }
+      return;
+    } finally {
+      l.running = false;
+    }
+    if (l.again && mounted.current) requestResync();
   }, [readOnce]);
 
   useEffect(() => {
     mounted.current = true;
-    const mine = () => requestResync();
-    mountedResync = mine;
+    mountedResync = requestResync;
     requestResync();
     const off = OBR.room.onMetadataChange((metadata) => apply(metadata, "event"));
     return () => {
       mounted.current = false;
       clearTimeout(retry.current);
-      if (mountedResync === mine) mountedResync = null;
+      if (mountedResync === requestResync) mountedResync = null;
       off();
     };
   }, [apply, requestResync]);
 
   // Resolves true once the write landed, false if it failed (the user is
-  // told). Either way it settles and the room is re-read (rule 3).
-  const save = useCallback(
-    (update: Metadata): Promise<boolean> =>
-      OBR.room
+  // told). Either way it settles, and the last one to settle re-reads the
+  // room (step 3).
+  const save = useCallback((update: Metadata): Promise<boolean> => {
+    inFlight += 1;
+    return OBR.room
         .setMetadata(update)
         .then(
           () => true,
@@ -195,11 +191,11 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
           },
         )
         .then((saved) => {
-          settle(Object.keys(update).length);
+          inFlight -= 1;
+          if (inFlight === 0) mountedResync?.();
           return saved;
-        }),
-    [],
-  );
+        });
+  }, []);
 
   // Changes that return the same object are no-ops and write nothing.
   const update = useCallback(
@@ -207,7 +203,7 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
       if (!gm) return Promise.resolve(false);
       const changed = change(latest.current);
       if (changed === latest.current) return Promise.resolve(true);
-      const next = restamp(changed, send(ROOM_KEY));
+      const next = restamp(changed, stampFor(ROOM_KEY));
       latest.current = next;
       setState(next);
       return save({ [ROOM_KEY]: next });
@@ -221,7 +217,7 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
       const current = latestDocs.current[id] ?? emptyPlayerDoc();
       const changed = change(current);
       if (changed === current) return Promise.resolve(true);
-      const next = restamp(changed, send(playerKey(id)));
+      const next = restamp(changed, stampFor(playerKey(id)));
       latestDocs.current = { ...latestDocs.current, [id]: next };
       setPlayerDocs(latestDocs.current);
       return save({ [playerKey(id)]: next });
@@ -241,7 +237,7 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
           if (!gm) continue;
           const lights = change(latest.current.lights);
           if (lights === latest.current.lights) continue;
-          const next = restamp({ ...latest.current, lights }, send(ROOM_KEY));
+          const next = restamp({ ...latest.current, lights }, stampFor(ROOM_KEY));
           latest.current = next;
           write[ROOM_KEY] = next;
         } else {
@@ -249,7 +245,7 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
           const current = latestDocs.current[owner] ?? emptyPlayerDoc();
           const lights = change(current.lights);
           if (lights === current.lights) continue;
-          const next = restamp({ ...current, lights }, send(playerKey(owner)));
+          const next = restamp({ ...current, lights }, stampFor(playerKey(owner)));
           latestDocs.current = { ...latestDocs.current, [owner]: next };
           write[playerKey(owner)] = next;
         }

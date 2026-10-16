@@ -37,14 +37,17 @@ const MENU: ContextMenuItem = {
 
 OBR.onReady(async () => {
   // What Owlbear currently has. Only updated after create/remove succeeds,
-  // so a failed call is retried on the next change instead of sticking.
+  // so a failed call is retried instead of sticking.
   let shown: boolean | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  // The two inputs, kept current by the listeners below, so a sync needs no
+  // reads of its own.
+  let gm = false;
+  let playersCanAdd = false;
 
   const sync = async () => {
-    const gm = (await OBR.player.getRole()) === "GM";
     // Players only get the menu while the GM allows player lights.
-    const allowed = gm || parsePlayersCanAdd((await OBR.room.getMetadata())[ROOM_KEY]);
+    const allowed = gm || playersCanAdd;
     if (allowed === shown) return;
     if (allowed) await OBR.contextMenu.create(MENU);
     else await OBR.contextMenu.remove(MENU_ID);
@@ -52,8 +55,7 @@ OBR.onReady(async () => {
     clearTimeout(retryTimer); // a pending retry is no longer needed
   };
 
-  // One sync at a time; changes that arrive meanwhile collapse into one rerun
-  // that reads fresh state, so out-of-order results can't win.
+  // One sync at a time; changes that arrive meanwhile collapse into one rerun.
   let running = false;
   let pending = false;
   const requestSync = async () => {
@@ -78,20 +80,27 @@ OBR.onReady(async () => {
     }
   };
 
-  requestSync();
-  // Only what can change the answer: the GM's "players can light their own"
-  // flag, and this player's role. Other extensions' writes and selection
-  // changes (player.onChange fires on every click) don't.
-  let lastAllowFlag: boolean | null = null;
+  // Only what can change the answer: this player's role, and the GM's
+  // "players can light their own" flag (other extensions' writes and
+  // selection changes don't).
   OBR.room.onMetadataChange((metadata) => {
-    // Just the one flag; parseRoomState would parse every light, on every
-    // extension's write, to read it.
     const flag = parsePlayersCanAdd(metadata[ROOM_KEY]);
-    if (flag === lastAllowFlag) return;
-    lastAllowFlag = flag;
+    if (flag === playersCanAdd) return;
+    playersCanAdd = flag;
     requestSync();
   });
-  onRoleChange(() => requestSync());
+  onRoleChange((role) => {
+    gm = role === "GM";
+    requestSync();
+  });
+  try {
+    const [role, metadata] = await Promise.all([OBR.player.getRole(), OBR.room.getMetadata()]);
+    gm = role === "GM";
+    playersCanAdd = parsePlayersCanAdd(metadata[ROOM_KEY]);
+  } catch (err) {
+    console.error(`Torchlight menu setup failed: ${errorMessage(err)}`);
+  }
+  requestSync();
   // GM only (checked inside): token lights and badges follow the timers.
   startTokenSync();
 });

@@ -7,6 +7,7 @@ import {
   SOURCES,
   isActive,
   isRunning,
+  remainingSec,
   parsePlayerDocs,
   parseRoomState,
   torchlightSignature,
@@ -305,21 +306,19 @@ export const syncOnce = async () => {
   return owned.map((o) => o.light);
 };
 
-// Cap on any wake-up delay: well under setTimeout's 2^31-1 ms limit (longer
-// delays fire at once), and doubles as a daily recheck.
-const MAX_TIMER_MS = 24 * 60 * 60 * 1000;
 // How soon to retry after a failed sync.
 export const SYNC_RETRY_MS = 10_000;
 
-// When to rerun: just after the next linked light runs out, sooner after a
-// failure, never at all if nothing is burning. endsAt comes from room metadata
-// and can be forged; setTimeout fires at once for delays past 2^31-1 ms, which
-// would spin the sync in a tight loop, so the delay is capped.
+// When to rerun: just after the next linked light runs out, and soon after a
+// failure (even with nothing burning, since the failed run may have left a
+// token lit).
 export const nextSyncDelay = (lights: Light[], now: number, failed: boolean): number | null => {
+  // remainingSec is capped at the light's duration (at most 24 h), so a forged
+  // endsAt can't produce a delay past setTimeout's limit.
   const next = lights
-    .filter((l) => l.tokenId && isRunning(l) && l.endsAt! > now)
-    .reduce((min, l) => Math.min(min, l.endsAt!), Infinity);
-  const delay = next === Infinity ? Infinity : Math.min(next - now + 250, MAX_TIMER_MS);
+    .filter((l) => l.tokenId && isRunning(l) && remainingSec(l, now) > 0)
+    .reduce((min, l) => Math.min(min, remainingSec(l, now) * 1000), Infinity);
+  const delay = next === Infinity ? Infinity : next + 250;
   const wait = failed ? Math.min(delay, SYNC_RETRY_MS) : delay;
   return wait === Infinity ? null : wait;
 };

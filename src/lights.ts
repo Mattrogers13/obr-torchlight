@@ -44,7 +44,7 @@ export interface Light {
 
 // Every doc records who wrote it last (a random id per page load, or
 // "menu-…" for the right-click menu) and that writer's sequence number. See
-// takeEvent in useRoomState for how clients use it.
+// the step comments at the top of useRoomState for how clients use it.
 export interface Stamp {
   writer: string;
   seq: number;
@@ -360,6 +360,9 @@ const parseStamp = (raw: Record<string, unknown>, into: Stamp) => {
   if (typeof raw.writer === "string" && raw.writer.length <= 40) into.writer = raw.writer;
   if (finite(raw.seq) && raw.seq >= 0) into.seq = Math.floor(raw.seq);
 };
+
+// A writer id for stamps: 8 random chars, with an optional prefix ("menu-").
+export const newWriterId = (prefix = "") => prefix + crypto.randomUUID().slice(0, 8);
 
 // The only way a doc should be prepared for writing: put this writer's stamp
 // on it (and bump rev, see Stamp). A copied doc that isn't restamped carries
