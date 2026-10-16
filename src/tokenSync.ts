@@ -110,7 +110,7 @@ export interface BadgeState {
 // PNG, not SVG: Chrome can't decode SVG into the canvas textures Owlbear
 // draws items with (createImageBitmap fails), so an SVG badge showed as a
 // black square there. Sources: art/badges/*.svg.
-export const badgeImage = (origin: string, source: LightSource) => `${origin}/img/badge-${source}.png`;
+export const badgeImage = (origin: string, source: LightSource) => `${origin}/img/badge-${source}.webp`;
 
 export interface SyncPlan {
   apply: { tokenId: string; source: LightSource; saved: unknown }[];
@@ -207,7 +207,7 @@ const badge = (token: Item, source: LightSource, dpi: number): Image => {
   const size = 128;
   const offset = (dpi / 2) * Math.max(token.scale.x, 0.5) * 0.75;
   return buildImage(
-    { width: size, height: size, mime: "image/png", url: badgeImage(window.location.origin, source) },
+    { width: size, height: size, mime: "image/webp", url: badgeImage(window.location.origin, source) },
     { dpi: size / 0.35, offset: { x: size / 2, y: size / 2 } },
   )
     .name(`${SOURCES[source].label} (Torchlight)`)

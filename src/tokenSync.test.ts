@@ -166,7 +166,7 @@ describe("planSync", () => {
   });
 
   it("replaces a badge whose image is outdated (the old SVG badges)", () => {
-    const imageFor = (source: string) => `https://x/img/badge-${source}.png`;
+    const imageFor = (source: string) => `https://x/img/badge-${source}.webp`;
     const plan = planSync(
       new Map([["a", "torch"]]),
       [{ id: "a", dfLight: dfLight(900), marker: { saved: null, source: "torch" } }],
