@@ -7,6 +7,7 @@ import {
   SOURCES,
   isActive,
   isRunning,
+  remainingSec,
   parsePlayerDocs,
   parseRoomState,
   torchlightSignature,
@@ -305,22 +306,21 @@ export const syncOnce = async () => {
   return owned.map((o) => o.light);
 };
 
-// Cap on any wake-up delay: well under setTimeout's 2^31-1 ms limit (longer
-// delays fire at once), and doubles as a daily recheck.
-const MAX_TIMER_MS = 24 * 60 * 60 * 1000;
-// How soon to retry after a failed sync.
+// Retry after a failed sync: 10 s, doubling per consecutive failure, up to 5 min.
 export const SYNC_RETRY_MS = 10_000;
+const SYNC_RETRY_MAX_MS = 5 * 60_000;
 
-// When to rerun: just after the next linked light runs out, sooner after a
-// failure, never at all if nothing is burning. endsAt comes from room metadata
-// and can be forged; setTimeout fires at once for delays past 2^31-1 ms, which
-// would spin the sync in a tight loop, so the delay is capped.
-export const nextSyncDelay = (lights: Light[], now: number, failed: boolean): number | null => {
+// When to rerun: just after the next linked light runs out, and soon after a
+// failure (even with nothing burning, since the failed run may have left a
+// token lit).
+export const nextSyncDelay = (lights: Light[], now: number, retryMs: number | null): number | null => {
+  // remainingSec is capped at the light's duration (at most 24 h), so a forged
+  // endsAt can't produce a delay past setTimeout's limit.
   const next = lights
-    .filter((l) => l.tokenId && isRunning(l) && l.endsAt! > now)
-    .reduce((min, l) => Math.min(min, l.endsAt!), Infinity);
-  const delay = next === Infinity ? Infinity : Math.min(next - now + 250, MAX_TIMER_MS);
-  const wait = failed ? Math.min(delay, SYNC_RETRY_MS) : delay;
+    .filter((l) => l.tokenId && isRunning(l) && remainingSec(l, now) > 0)
+    .reduce((min, l) => Math.min(min, remainingSec(l, now) * 1000), Infinity);
+  const delay = next === Infinity ? Infinity : next + 250;
+  const wait = retryMs !== null ? Math.min(delay, retryMs) : delay;
   return wait === Infinity ? null : wait;
 };
 
@@ -333,10 +333,13 @@ export const startTokenSync = () => {
 
   // Lights from the last good run, so a failed run can still schedule.
   let known: Light[] = [];
+  // Consecutive failures, for the retry back-off.
+  let failures = 0;
 
-  const schedule = (failed: boolean) => {
+  const schedule = () => {
     clearTimeout(timer);
-    const wait = nextSyncDelay(known, Date.now(), failed);
+    const retryMs = failures > 0 ? Math.min(SYNC_RETRY_MS * 2 ** (failures - 1), SYNC_RETRY_MAX_MS) : null;
+    const wait = nextSyncDelay(known, Date.now(), retryMs);
     if (wait !== null) timer = setTimeout(run, wait);
   };
 
@@ -346,20 +349,21 @@ export const startTokenSync = () => {
       return;
     }
     busy = true;
-    let failed = false;
     try {
       do {
         again = false;
         // undefined = not the GM or no scene: nothing of ours to wake up for.
         known = (await syncOnce()) ?? [];
       } while (again);
+      failures = 0;
     } catch (err) {
-      // Retry soon: a token whose light runs out meanwhile must still go dark.
-      failed = true;
+      // Retry (backing off): a token whose light runs out meanwhile must
+      // still go dark.
+      failures += 1;
       console.error(`Torchlight token sync failed: ${errorMessage(err)}`);
     } finally {
       busy = false;
-      schedule(failed);
+      schedule();
     }
   };
 

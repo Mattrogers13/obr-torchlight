@@ -188,20 +188,20 @@ describe("nextSyncDelay", () => {
   const linked = (endsAt: number | null) => ({ ...createLight("a", "T", "time", 60, T0, { tokenId: "tok" }), endsAt });
 
   it("wakes just after the next linked light runs out", () => {
-    expect(nextSyncDelay([linked(T0 + 5000)], T0, false)).toBe(5250);
-    expect(nextSyncDelay([linked(null)], T0, false)).toBeNull();
+    expect(nextSyncDelay([linked(T0 + 5000)], T0, null)).toBe(5250);
+    expect(nextSyncDelay([linked(null)], T0, null)).toBeNull();
   });
 
   it("caps a forged far-future end time instead of overflowing setTimeout", () => {
-    const delay = nextSyncDelay([linked(1e15)], T0, false)!;
+    const delay = nextSyncDelay([linked(1e15)], T0, null)!;
     expect(delay).toBeLessThanOrEqual(2 ** 31 - 1);
     expect(delay).toBeGreaterThan(60_000);
   });
 
   it("retries soon after a failure, even with nothing scheduled", () => {
-    expect(nextSyncDelay([linked(T0 + 3_600_000)], T0, true)).toBe(SYNC_RETRY_MS);
+    expect(nextSyncDelay([linked(T0 + 3_600_000)], T0, SYNC_RETRY_MS)).toBe(SYNC_RETRY_MS);
     // The first pass failing (nothing known yet) must still retry.
-    expect(nextSyncDelay([], T0, true)).toBe(SYNC_RETRY_MS);
+    expect(nextSyncDelay([], T0, SYNC_RETRY_MS)).toBe(SYNC_RETRY_MS);
   });
 });
 

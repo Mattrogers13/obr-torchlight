@@ -11,6 +11,7 @@ import {
   currentLight,
   isActive,
   lightName,
+  newWriterId,
   parsePlayerDoc,
   parsePlayerDocs,
   parseRoomState,
@@ -22,7 +23,7 @@ import {
 
 // This writer's own stamp (see restamp: a copied doc must never keep the
 // previous writer's stamp).
-const menuStamp = () => ({ writer: `menu-${crypto.randomUUID().slice(0, 8)}`, seq: 1 });
+const menuStamp = () => ({ writer: newWriterId("menu-"), seq: 1 });
 
 export interface Lighter {
   gm: boolean;

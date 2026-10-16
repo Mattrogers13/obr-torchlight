@@ -42,6 +42,10 @@ Node 24 required (`.node-version`, fnm auto-switches on cd). Node 25+ breaks vit
 
 Tests mock the OBR SDK in memory (`Main.test.tsx`: room metadata, broadcast, notification). SDK calls return promises, so mocks must too.
 
+Mock modes: `room.deferWrites` + `flushWrite()` apply, emit and resolve each write in room order (use for sync races); `deferEchoes` only delays echoes. Never `act(() => fnReturningPromise())`: use a block body, or every later test renders empty.
+
+A regression test must fail on the old code: `cp file /tmp/x.bak && git show <ref>:file > file`, run it, then `cp` back. Never `git checkout -- file` for this (wipes uncommitted edits).
+
 ## Architecture
 
 ### Dual-Mode Application
@@ -113,11 +117,12 @@ Timer logic is pure functions in `src/lights.ts` (every time calc takes `now`, e
 - Everything read from room metadata goes through `parseRoomState` / `parsePlayerDocs`: any client or extension can write it.
 - Permissions are client-side only; a tampering client can write any key.
 - Staleness is by `writer`/`seq` stamps. Prepare every write with `restamp` (a copied doc that keeps another client's stamp is discarded as that client's echo).
-- `rev` is still written for panels on builds before 2026-10-15; remove it after 2026-11-15.
+- `rev` is still written for panels on builds up to 2026-10-15.7; remove it after 2026-11-15.
 - Never unlock the panel before the first room read lands (an empty state written back wipes the room).
 - Multi-player GM actions are one `updateLights` write. Edit with `mapLights`, not `.map`.
 - The GM never writes a player's doc just to mark a burn-out (`burnedOut` lives in shared state).
 - Room metadata is capped at 16 kB across all extensions.
+- For sync bugs, simplify the mechanism rather than add special cases (that cascaded across review rounds), and prefer a real Owlbear test over another review round.
 
 localStorage keys (per browser, not shared). Always go through `src/storage.ts` (`readLocal` / `writeLocal`): localStorage throws in Owlbear's iframe under strict privacy settings, and an unguarded read during render blanks the panel.
 
@@ -133,6 +138,7 @@ Two installs in Owlbear, each added once:
 
 - Live: `https://torchlight.editbag.workers.dev/manifest.json` (named "Torchlight")
 - Dev: `https://dev-torchlight.editbag.workers.dev/manifest.json` (the long-lived `dev` branch). Non-main builds rename the manifest to "Torchlight (Dev)" via `WORKERS_CI_BRANCH` (`src/devManifest.ts`, wired in `vite.config.js`).
+- Dev builds show `DEV · dev · <sha>` under the version on About. Confirm a deploy with `curl` on `/assets/main-*.js` for that string, and give Matt the sha to check.
 
 - `public/_headers` sets `Access-Control-Allow-Origin: *`. Required: OBR fetches the manifest cross-origin, and Workers send no CORS header by default.
 - `wrangler.jsonc` needs `"previews": {}` or `wrangler preview` (PR builds) fails. Previews don't apply the SPA fallback (deep links 404); production does.
@@ -143,6 +149,7 @@ Two installs in Owlbear, each added once:
 
 - Branch + PR per change; squash-merge after CI and Workers Builds both pass. Features that need in-Owlbear testing stay open until the manual pass (`TESTING.md`).
 - To review in Owlbear, rebuild `dev` from main plus the open PR branches and force-push it: `git checkout -B dev origin/main && git merge --no-edit <branches...> && git push -f origin dev`. `dev` is disposable; never PR from it or merge it into main.
+- Stacked PRs: `gh pr edit N --base main` before deleting the branch it's based on (deleting a base auto-closes PRs on it). Run multi-step git loops under `bash`, not zsh (no word-splitting of `$var`).
 - Versions are dates (`YYYY-MM-DD` in package.json and manifest.json; a second release the same day is `YYYY-MM-DD.1`, then `.2`) and drive the WhatsNew modal (shows on any change, not just newer). Add matching entries to `src/releaseNotes.ts` and `RELEASE-NOTES.md`.
 
 ### Theming
