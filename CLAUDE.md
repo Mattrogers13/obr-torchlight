@@ -44,6 +44,8 @@ Tests mock the OBR SDK in memory (`Main.test.tsx`: room metadata, broadcast, not
 
 Mock modes: `room.deferWrites` + `flushWrite()` apply, emit and resolve each write in room order (use for sync races); `deferEchoes` only delays echoes. Never `act(() => fnReturningPromise())`: use a block body, or every later test renders empty.
 
+Per-test mock behavior: `vi.spyOn(obj, "fn").mockImplementation(...)`, never assign over a mock. `clearAllMocks` (our `beforeEach`) keeps implementations; `resetAllMocks` restores each `vi.fn`'s own; `restoreAllMocks` does NOT undo a spyOn over a `vi.fn`. Passes alone, fails in the full run = a leaked mock.
+
 A regression test must fail on the old code: `cp file /tmp/x.bak && git show <ref>:file > file`, run it, then `cp` back. Never `git checkout -- file` for this (wipes uncommitted edits).
 
 ## Architecture

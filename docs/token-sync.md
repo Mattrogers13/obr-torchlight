@@ -13,6 +13,8 @@ The token's previous light (e.g. the GM's 3 ft light so players can see their ow
 
 Needs Dynamic Fog in the room to actually cast light; without it only the badge shows.
 
+SDK 3.1 also has native FOG-layer items (`buildLight`, `buildWall`). Untested: whether they render without Dynamic Fog installed, and whether they'd be simpler than writing `rodeo.owlbear.dynamic-fog/light`. Check before reworking token lights.
+
 ## When it runs
 
 On room changes, scene load, and a timer at the next burn-out.
