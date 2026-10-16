@@ -1,4 +1,3 @@
-export const paths: { [key: string]: string } = {
+export const paths = {
   about: "/about",
-  playerView: "/player-view",
 };
