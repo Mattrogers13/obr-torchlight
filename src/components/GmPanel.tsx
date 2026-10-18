@@ -1,6 +1,6 @@
-import React, { MutableRefObject } from "react";
+import React, { MutableRefObject, useEffect, useState } from "react";
 
-import { broadcastLightOut } from "../alerts";
+import { broadcastLightOut, broadcastTimePasses } from "../alerts";
 import { useActiveOnly } from "../hooks/useActiveOnly";
 import {
   LIMITS,
@@ -31,6 +31,38 @@ import {
   LightEntry,
   LightRow,
 } from "./Lights";
+
+// "Light when unlit" in feet. Saved on blur or Enter (not per keystroke, so
+// clearing the field to retype doesn't write); out-of-range values are
+// clamped, junk goes back to the saved value.
+const UnlitInput: React.FC<{ value: number; onSave: (ft: number) => void }> = ({ value, onSave }) => {
+  const [draft, setDraft] = useState(String(value));
+  // Follow changes from other clients.
+  useEffect(() => setDraft(String(value)), [value]);
+  const commit = () => {
+    const n = Number(draft);
+    if (draft.trim() === "" || !Number.isFinite(n)) return setDraft(String(value));
+    const ft = Math.min(LIMITS.maxUnlitFt, Math.max(0, Math.round(n)));
+    setDraft(String(ft));
+    if (ft !== value) onSave(ft);
+  };
+  return (
+    <label className="flex items-center gap-2" title="What a token that had no light gets when its light stops (0 = none)">
+      Light when unlit:
+      <input
+        type="number"
+        min={0}
+        max={LIMITS.maxUnlitFt}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+        className="w-16 px-2 py-1 border border-theme rounded bg-theme-card text-theme"
+      />
+      ft
+    </label>
+  );
+};
 
 // The GM's view: bulk actions, player permissions, the add form, and every
 // light in the room with full controls.
@@ -122,7 +154,9 @@ const GmPanel: React.FC<{
     changeLights(
       entries.filter((e) => e.light.kind === "time" && isActive(e.light, t)).map((e) => e.ownerId),
       (lights) => passTime(lights, minutes * 60, t),
-    );
+    ).then((saved) => {
+      if (saved) broadcastTimePasses(minutes);
+    });
   };
 
   const timeLights = entries.map((e) => e.light).filter((l) => l.kind === "time" && isActive(l, now));
@@ -184,25 +218,7 @@ const GmPanel: React.FC<{
             />
             Players can remove their own
           </label>
-          <label className="flex items-center gap-2">
-            Light when unlit:
-            <select
-              value={state.unlitFt}
-              onChange={(e) => {
-                const unlitFt = Number(e.target.value);
-                update((s) => ({ ...s, unlitFt }));
-              }}
-              title="What a token that had no light gets when its light stops"
-              className="px-2 py-1 border border-theme rounded bg-theme-card text-theme"
-            >
-              {/* The saved value too, in case another client wrote one not listed. */}
-              {[...new Set([0, 3, 5, 10, state.unlitFt])].sort((a, b) => a - b).map((ft) => (
-                <option key={ft} value={ft}>
-                  {ft === 0 ? "None" : `${ft} ft`}
-                </option>
-              ))}
-            </select>
-          </label>
+          <UnlitInput value={state.unlitFt} onSave={(unlitFt) => update((s) => ({ ...s, unlitFt }))} />
         </div>
         <AddLightForm
           defaultName={() => nextDefaultName(state.lights)}

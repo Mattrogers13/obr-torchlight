@@ -66,7 +66,7 @@ On the GM's client the background page also runs `src/tokenSync.ts`: tokens with
 - Raster images are WebP (badges lossless, `mime: "image/webp"`). Item images must never be SVG (Chrome draws a black square in Owlbear's canvas). Exception: the manifest icon stays `logo.png` until Owlbear WebP support is confirmed.
 - Player docs can be forged: a player's light only reaches a token that is visible and that player could edit (`playerMayLight`), or a tampered doc could light a hidden monster through the GM's client.
 
-The plugin ID `"io.github.mattrogers13.torchlight"` is exported as `ID` from `src/constants.ts` (with the room metadata keys; `components/util/constants.ts` holds only route paths) and prefixes the room metadata key and broadcast channel.
+The plugin ID `"io.github.mattrogers13.torchlight"` is exported as `ID` from `src/constants.ts` (with the room metadata keys; `components/util/constants.ts` holds only route paths) and prefixes the room metadata keys and broadcast channels.
 
 ### Owlbear Rodeo Integration
 
@@ -77,9 +77,10 @@ The app uses `@owlbear-rodeo/sdk` for integration with Owlbear Rodeo:
 - **Theme Sync**: OBR's light/dark theme is applied by toggling the `dark` class on `<html>` in `SPA.tsx`
 - **Roles**: `SPA.tsx` renders nothing until `OBR.player.getRole()` resolves, so a player never briefly runs GM logic
 
-Shared state lives in OBR room metadata under `${ID}/state` (see State Management). One broadcast channel:
+Shared state lives in OBR room metadata under `${ID}/state` (see State Management). Two broadcast channels, both sent with `destination: "ALL"` and shown by `listenForAlerts` on the background page (never in the panel too, or clients with it open get two notices):
 
-- `${ID}/light-out`: array of light names that just burned out; sent by a GM client with `destination: "ALL"`, every client shows the notification
+- `${ID}/light-out`: array of light names that just burned out or were put out (GM panel, right-click menu)
+- `${ID}/time-passes`: minutes skipped by the GM's Time passes
 
 Manifest limits: `name` ≤ 45, `description` ≤ 128 chars (enforced by `src/manifest.test.ts`).
 
@@ -99,8 +100,8 @@ Route paths are defined in `src/components/util/constants.ts`.
 - **Main.tsx**: Wiring only: loads room state (`useRoomState`), builds the combined light list, runs the alert hooks, renders `GmPanel` or `PlayerPanel`
 - **GmPanel.tsx**: GM view and all GM actions (bulk actions, permissions, add, per-light controls)
 - **PlayerPanel.tsx**: Player view: one list (own lights first), add one at a time, remove own if allowed
-- **hooks/useGmAlerts.ts**: GM-only alerting (player lit/paused/removed notifications, burn-out detection/record/broadcast) and `useLightOutListener` (everyone)
-- **alerts.ts**: the `light-out` broadcast channel, its parser, and `broadcastLightOut`
+- **hooks/useGmAlerts.ts**: GM-only alerting (player lit/paused/removed notifications, burn-out detection/record/broadcast)
+- **alerts.ts**: the broadcast channels, their parsers, senders, and `listenForAlerts`
 - **Lights.tsx**: Add-light form, GM light rows, bulk actions, Active-only filter, and the player light list
 - **SPA.tsx**: Sets up router, detects player role, syncs OBR theme to `dark` CSS class
 - **Navbar.tsx**: Tab navigation (Main / About), renders the `WhatsNew` modal, shows dev mode banner

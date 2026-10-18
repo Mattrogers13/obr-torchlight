@@ -18,7 +18,8 @@ const OPTIONS: { action: Action; label: string; icon: string }[] = [
   { action: "put-out", label: "Put out light", icon: "/img/put-out-menu.svg" },
 ];
 
-const run = async (action: Action) => {
+// What to tell the user; null when the room-wide alert already says it.
+const run = async (action: Action): Promise<string | null> => {
   const ids = (await OBR.player.getSelection()) ?? [];
   const items = await OBR.scene.items.getItems(ids);
   const tokens: Token[] = items
@@ -31,8 +32,9 @@ const run = async (action: Action) => {
 
   const names = await putOutOnTokens(who, tokens.map((t) => t.id), Date.now());
   if (names.length === 0) return who.gm ? "No light burning on that token." : "None of your lights are burning there.";
+  // Everyone, this client included, gets "<names> went out!".
   broadcastLightOut(names);
-  return `Put out ${names.join(", ")}.`;
+  return null;
 };
 
 OBR.onReady(async () => {
@@ -57,7 +59,8 @@ OBR.onReady(async () => {
     button.addEventListener("click", async () => {
       buttons.forEach((b) => (b.disabled = true));
       try {
-        notify(await run(action), "INFO");
+        const message = await run(action);
+        if (message) notify(message, "INFO");
       } catch (err) {
         notify(`Torchlight couldn't ${action === "put-out" ? "put it out" : "light it"}: ${errorMessage(err)}`, "ERROR");
       } finally {

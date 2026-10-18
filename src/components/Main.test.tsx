@@ -3,7 +3,7 @@ import { render, renderHook, screen, fireEvent, waitFor, act } from "@testing-li
 import OBR from "@owlbear-rodeo/sdk";
 
 import Main from "./Main";
-import { LIGHT_OUT_CHANNEL } from "../alerts";
+import { LIGHT_OUT_CHANNEL, TIME_PASSES_CHANNEL } from "../alerts";
 import { BURN_OUT_RETRY_MS } from "../hooks/useGmAlerts";
 import { ROOM_KEY, playerKey } from "../constants";
 import { useRoomState } from "../hooks/useRoomState";
@@ -530,15 +530,26 @@ describe("Main (Torchlight)", () => {
       expect(left(stored().lights[0] as never)).toBeGreaterThan(1790);
       expect(stored().lights[1]).toMatchObject({ endsAt: null, remainingSec: 1800 });
       expect(left((room.metadata[playerKey("p2")] as { lights: never[] }).lights[0])).toBeLessThanOrEqual(1800);
+      await waitFor(() =>
+        expect(OBR.broadcast.sendMessage).toHaveBeenCalledWith(TIME_PASSES_CHANNEL, 30, { destination: "ALL" }),
+      );
     });
 
     it("the unlit light setting is saved in the shared state", async () => {
       room.metadata = { [ROOM_KEY]: { lights: [] } };
       render(<Main player={false} />);
-      const select = await screen.findByRole("combobox", { name: /Light when unlit/ });
-      expect(select).toHaveValue("3");
-      fireEvent.change(select, { target: { value: "0" } });
-      await waitFor(() => expect(stored()).toMatchObject({ unlitFt: 0 }));
+      const input = await screen.findByRole("spinbutton", { name: /Light when unlit/ });
+      expect(input).toHaveValue(3);
+      // Clearing to retype doesn't write; junk snaps back.
+      fireEvent.change(input, { target: { value: "" } });
+      fireEvent.blur(input);
+      expect(input).toHaveValue(3);
+      expect(OBR.room.setMetadata).not.toHaveBeenCalled();
+      // Saved on blur, clamped to 30.
+      fireEvent.change(input, { target: { value: "45" } });
+      fireEvent.blur(input);
+      await waitFor(() => expect(stored()).toMatchObject({ unlitFt: 30 }));
+      expect(input).toHaveValue(30);
     });
 
     it("Resume all leaves put-out lights out", async () => {

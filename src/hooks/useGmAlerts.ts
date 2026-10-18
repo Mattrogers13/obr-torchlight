@@ -1,24 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import OBR from "@owlbear-rodeo/sdk";
 
-import { LIGHT_OUT_CHANNEL, broadcastLightOut, parseLightOut } from "../alerts";
+import { broadcastLightOut } from "../alerts";
 import { LightEntry } from "../components/Lights";
 import { RoomState, burnKey, isOut, mapLights, pause, pruneBurnedOut } from "../lights";
 import { notify } from "../utils";
 
 // How long to wait before re-recording a burn-out whose save failed.
 export const BURN_OUT_RETRY_MS = 10_000;
-
-// Everyone shows the went-out notification; only a GM sends it.
-export const useLightOutListener = () =>
-  useEffect(
-    () =>
-      OBR.broadcast.onMessage(LIGHT_OUT_CHANNEL, (event) => {
-        const names = parseLightOut(event.data);
-        if (names.length > 0) notify(`${names.join(", ")} went out!`, "WARNING");
-      }),
-    [],
-  );
 
 // GM-only alerting. Returns refs the GM's own removals fill: `removedByMe`
 // so they don't read as "<player> removed ...", and `restoredAfterFailure`
