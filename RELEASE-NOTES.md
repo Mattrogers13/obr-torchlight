@@ -1,5 +1,14 @@
 # Release Notes
 
+## Version 2026-10-18
+
+### New
+
+- **Put out light** on the token right-click menu (Torchlight → Put out light). The GM puts out every light burning on the selected tokens, players' included; a player puts out only their own. Everyone gets the "went out" alert.
+- **Light when unlit** (GM panel, default 3 ft): when a token's light stops and the token had no Dynamic Fog light before Torchlight lit it, it gets this small light instead of none, so players can see their own token but not much else. A token that had its own light still gets that back. Set to None to turn it off.
+- **Time passes** (GM panel): 1m, 5m, 10m, 30m or 1 hr comes off every lit real-time light at once, players' included and lights frozen by Pause all. Anything that runs out burns out and alerts as usual. Put-out, swapped and turn-counted lights aren't touched.
+- **Turn out all the lights** replaces "Put out…": All puts out everything burning, Non-magical everything but Light spells. The checklist is still there for partial cases (DEX saves).
+
 ## Version 2026-10-15.8
 
 Reliability release from repeated code reviews.

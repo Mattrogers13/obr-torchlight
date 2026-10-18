@@ -15,9 +15,11 @@ import {
   parsePlayerDoc,
   parsePlayerDocs,
   parseRoomState,
+  putOutLights,
   replacePlayerLight,
   replaceTokenLight,
   restamp,
+  Stamp,
   setAsideLight,
 } from "./lights";
 
@@ -111,4 +113,32 @@ export const lightFromTokens = async (
     ),
   });
   return describe([light], current ? [current.name] : []);
+};
+
+// Puts out the lights burning on these tokens (right-click "Put out light").
+// The GM puts out anyone's; a player only their own. Token sync then gives
+// the token back its previous light (or the unlit default) and drops the
+// badge. Returns the names put out (empty = nothing was burning there).
+export const putOutOnTokens = async (who: Lighter, tokenIds: string[], now: number): Promise<string[]> => {
+  const ids = new Set(tokenIds);
+  const onToken = (l: Light) => !!l.tokenId && ids.has(l.tokenId);
+  const metadata = await OBR.room.getMetadata();
+  const update: Metadata = {};
+  const names: string[] = [];
+
+  const putOut = <D extends Stamp & { lights: Light[] }>(key: string, doc: D) => {
+    const out = putOutLights(doc.lights, onToken, now);
+    if (out.names.length === 0) return;
+    names.push(...out.names);
+    update[key] = restamp({ ...doc, lights: out.lights }, menuStamp());
+  };
+
+  if (who.gm) {
+    putOut(ROOM_KEY, parseRoomState(metadata[ROOM_KEY]));
+    for (const [ownerId, doc] of Object.entries(parsePlayerDocs(metadata))) putOut(playerKey(ownerId), doc);
+  } else {
+    putOut(playerKey(who.playerId), parsePlayerDoc(metadata[playerKey(who.playerId)]));
+  }
+  if (names.length > 0) await OBR.room.setMetadata(update);
+  return names;
 };

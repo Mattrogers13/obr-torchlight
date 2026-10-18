@@ -8,14 +8,14 @@ import { errorMessage, onRoleChange } from "./utils";
 // Runs whenever Torchlight is enabled in the room, panel open or not.
 // Adds one "Torchlight" entry to the right-click menu of character tokens;
 // it opens a small embedded submenu (menu.html / src/menu.ts) with the three
-// light sources. On the GM's client it also keeps token lights in step with
+// light sources and Put out light. On the GM's client it also keeps token lights in step with
 // the timers (tokenSync.ts).
 
 const MENU_ID = `${ID}/light-menu`;
 // First retry after Owlbear fails to add or remove the menu (then doubling).
 const MENU_RETRY_MS = 5000;
-// Height of the embedded submenu: 3 rows of 36px plus 8px padding (menu.html).
-const MENU_HEIGHT = 116;
+// Height of the embedded submenu: 4 rows of 36px plus 8px padding (menu.html).
+const MENU_HEIGHT = 152;
 
 const MENU: ContextMenuItem = {
   id: MENU_ID,

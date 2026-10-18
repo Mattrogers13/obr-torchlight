@@ -16,10 +16,11 @@ import {
   isRunning,
   mapLights,
   nextDefaultName,
+  passTime,
   pause,
+  putOutLights,
   reset,
   resume,
-  setAsideLight,
 } from "../lights";
 import {
   ActiveFilter,
@@ -104,16 +105,24 @@ const GmPanel: React.FC<{
     const putOutNow: string[] = [];
     changeLights(
       hit.map((e) => e.ownerId),
-      (lights) =>
-        mapLights(lights, (l) => {
-          if (!ids.has(l.id) || !isActive(l, t)) return l;
-          putOutNow.push(l.name);
-          return setAsideLight(l, t, "put-out");
-        }),
+      (lights) => {
+        const out = putOutLights(lights, (l) => ids.has(l.id), t);
+        putOutNow.push(...out.names);
+        return out.lights;
+      },
     ).then((saved) => {
       // Only tell the room once the lights really are out.
       if (saved) broadcastLightOut(putOutNow);
     });
+  };
+
+  // Time skips ahead for every lit real-time light, players' included.
+  const passMinutes = (minutes: number) => {
+    const t = Date.now();
+    changeLights(
+      entries.filter((e) => e.light.kind === "time" && isActive(e.light, t)).map((e) => e.ownerId),
+      (lights) => passTime(lights, minutes * 60, t),
+    );
   };
 
   const timeLights = entries.map((e) => e.light).filter((l) => l.kind === "time" && isActive(l, now));
@@ -143,6 +152,8 @@ const GmPanel: React.FC<{
         onSetAllRunning={setAllRunning}
         onPutOut={putOut}
         onRemoveAll={() => removeLights(entries, () => [])}
+        canPassTime={timeLights.length > 0}
+        onPassTime={passMinutes}
       />
 
       <div className="bg-theme-card rounded-lg border border-theme p-4 mt-4 mb-4">
@@ -172,6 +183,25 @@ const GmPanel: React.FC<{
               onChange={() => update((s) => ({ ...s, playersCanRemove: !s.playersCanRemove }))}
             />
             Players can remove their own
+          </label>
+          <label className="flex items-center gap-2">
+            Light when unlit:
+            <select
+              value={state.unlitFt}
+              onChange={(e) => {
+                const unlitFt = Number(e.target.value);
+                update((s) => ({ ...s, unlitFt }));
+              }}
+              title="What a token that had no light gets when its light stops"
+              className="px-2 py-1 border border-theme rounded bg-theme-card text-theme"
+            >
+              {/* The saved value too, in case another client wrote one not listed. */}
+              {[...new Set([0, 3, 5, 10, state.unlitFt])].sort((a, b) => a - b).map((ft) => (
+                <option key={ft} value={ft}>
+                  {ft === 0 ? "None" : `${ft} ft`}
+                </option>
+              ))}
+            </select>
           </label>
         </div>
         <AddLightForm

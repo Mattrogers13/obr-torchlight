@@ -6,6 +6,16 @@ export interface ReleaseHighlight {
 
 export const releaseHighlights: ReleaseHighlight[] = [
   {
+    version: "2026-10-18",
+    date: "October 18, 2026",
+    highlights: [
+      "💨 Right-click a token → Torchlight → Put out light: its light goes out and the badge comes off",
+      "🕯️ A token with no light of its own drops to a small unlit light (3 ft by default, set it in the panel) so players can still see their token",
+      "⏳ Time passes: skip 1m, 5m, 10m, 30m or 1 hr on every lit torch at once",
+      "🌑 Turn out all the lights: All, or Non-magical to spare Light spells",
+    ]
+  },
+  {
     version: "2026-10-15.8",
     date: "October 15, 2026",
     highlights: [

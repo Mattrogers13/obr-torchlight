@@ -12,7 +12,9 @@ import {
   nextDefaultName,
   parsePlayerDoc,
   parseRoomState,
+  passTime,
   pause,
+  putOutLights,
   replacePlayerLight,
   SOURCES,
   burnKey,
@@ -175,13 +177,13 @@ describe("parseRoomState (untrusted metadata)", () => {
   it("returns empty state for missing or non-object data", () => {
     for (const raw of [undefined, null, 42, "x", [], true]) {
       expect(parseRoomState(raw)).toEqual({
-        rev: 0, writer: "", seq: 0, lights: [], showToPlayers: false, playersCanAdd: false, playersCanRemove: false, burnedOut: [],
+        rev: 0, writer: "", seq: 0, lights: [], showToPlayers: false, playersCanAdd: false, playersCanRemove: false, burnedOut: [], unlitFt: 3,
       });
     }
   });
 
   it("round-trips valid state", () => {
-    const state = { rev: 7, writer: "ab12", seq: 3, lights: [valid], showToPlayers: true, playersCanAdd: true, playersCanRemove: false, burnedOut: ["x#1"] };
+    const state = { rev: 7, writer: "ab12", seq: 3, lights: [valid], showToPlayers: true, playersCanAdd: true, playersCanRemove: false, burnedOut: ["x#1"], unlitFt: 5 };
     expect(parseRoomState(JSON.parse(JSON.stringify(state)))).toEqual(state);
   });
 
@@ -378,5 +380,59 @@ describe("torchlightSignature", () => {
 
   it("changes when our data changes", () => {
     expect(torchlightSignature({ [ROOM_KEY]: { rev: 1 } })).not.toBe(torchlightSignature({ [ROOM_KEY]: { rev: 2 } }));
+  });
+});
+
+describe("time passes", () => {
+  const torch = createLight("a", "Torch", "time", 60, T0);
+  const now = T0 + 60_000; // 59 min left
+
+  it("takes the time off running and Pause-all-paused lights", () => {
+    const [running, paused] = passTime([torch, pause({ ...torch, id: "b" }, now)], 10 * 60, now);
+    expect(remainingSec(running, now)).toBe(49 * 60);
+    expect(isRunning(running)).toBe(true);
+    expect(remainingSec(paused, now)).toBe(49 * 60);
+    expect(isRunning(paused)).toBe(false);
+  });
+
+  it("burns a light out when more time passes than it has left", () => {
+    const [light] = passTime([torch], 60 * 60, now);
+    expect(isOut(light, now)).toBe(true);
+    expect(light.alerted).toBe(false);
+  });
+
+  it("leaves put-out, swapped, burned-out and turn lights alone", () => {
+    const lights = [
+      setAsideLight(torch, now, "put-out"),
+      setAsideLight({ ...torch, id: "b" }, now),
+      { ...torch, id: "c", endsAt: T0 - 1 },
+      createLight("d", "Lantern", "turns", 10, T0),
+    ];
+    expect(passTime(lights, 600, now)).toBe(lights);
+  });
+});
+
+describe("putOutLights", () => {
+  it("puts out what it picks, skips what's already out, and names them", () => {
+    const now = T0 + 1000;
+    const lights = [
+      createLight("a", "A", "time", 60, T0),
+      createLight("b", "B", "time", 60, T0),
+      setAsideLight(createLight("c", "C", "time", 60, T0), now, "swap"),
+    ];
+    const out = putOutLights(lights, (l) => l.id !== "b", now);
+    expect(out.names).toEqual(["A"]);
+    expect(out.lights.map((l) => l.setAside)).toEqual(["put-out", null, "swap"]);
+    expect(putOutLights(lights, () => false, now).lights).toBe(lights);
+  });
+});
+
+describe("unlit light setting", () => {
+  it("defaults to 3 ft and is clamped to 0-30", () => {
+    expect(parseRoomState({}).unlitFt).toBe(3);
+    expect(parseRoomState({ unlitFt: 0 }).unlitFt).toBe(0);
+    expect(parseRoomState({ unlitFt: 500 }).unlitFt).toBe(LIMITS.maxUnlitFt);
+    expect(parseRoomState({ unlitFt: -5 }).unlitFt).toBe(0);
+    expect(parseRoomState({ unlitFt: "10" }).unlitFt).toBe(3);
   });
 });

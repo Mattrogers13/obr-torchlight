@@ -116,6 +116,16 @@ describe("planSync", () => {
     expect(plan.deleteBadges).toEqual(["badge"]);
   });
 
+  it("a token that had no light gets the unlit light when its light stops", () => {
+    const unlit = dfLight(90);
+    const restore = (saved: unknown) =>
+      planSync(new Map(), [{ id: "a", dfLight: dfLight(900), marker: { saved, source: "torch" } }], [], px, () => "", unlit)
+        .restore;
+    expect(restore(null)).toEqual([{ tokenId: "a", saved: unlit }]);
+    // A light of its own wins over the default.
+    expect(restore(threeFoot)).toEqual([{ tokenId: "a", saved: threeFoot }]);
+  });
+
   it("does nothing when the token already matches", () => {
     const plan = planSync(
       new Map([["a", "torch"]]),
