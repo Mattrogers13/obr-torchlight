@@ -125,6 +125,7 @@ Timer logic is pure functions in `src/lights.ts` (every time calc takes `now`, e
 - Multi-player GM actions are one `updateLights` write. Edit with `mapLights`, not `.map`.
 - The GM never writes a player's doc just to mark a burn-out (`burnedOut` lives in shared state).
 - Room metadata is capped at 16 kB across all extensions.
+- New `RoomState` fields need a parse default: `parseRoomState` drops unknown keys, so a panel on an older build erases a new field on its next write (it reverts to the default until everyone updates).
 - For sync bugs, simplify the mechanism rather than add special cases (that cascaded across review rounds), and prefer a real Owlbear test over another review round.
 
 localStorage keys (per browser, not shared). Always go through `src/storage.ts` (`readLocal` / `writeLocal`): localStorage throws in Owlbear's iframe under strict privacy settings, and an unguarded read during render blanks the panel.
@@ -152,9 +153,11 @@ Two installs in Owlbear, each added once:
 ### Workflow
 
 - Branch + PR per change; squash-merge after CI and Workers Builds both pass. Features that need in-Owlbear testing stay open until the manual pass (`TESTING.md`).
+- `TESTING.md` is the manual pass for the current feature PR: rewrite its steps (keep "Known quirk" and the Results table) rather than appending.
 - To review in Owlbear, rebuild `dev` from main plus the open PR branches and force-push it: `git checkout -B dev origin/main && git merge --no-edit <branches...> && git push -f origin dev`. `dev` is disposable; never PR from it or merge it into main.
 - Stacked PRs: `gh pr edit N --base main` before deleting the branch it's based on (deleting a base auto-closes PRs on it). Run multi-step git loops under `bash`, not zsh (no word-splitting of `$var`).
-- Versions are dates (`YYYY-MM-DD` in package.json and manifest.json; a second release the same day is `YYYY-MM-DD.1`, then `.2`) and drive the WhatsNew modal (shows on any change, not just newer). Add matching entries to `src/releaseNotes.ts` and `RELEASE-NOTES.md`.
+- While PRs are stacked and unmerged, branch new work off the top of the stack and set `--base` to that branch; `dev` is then just `origin/main` + the top branch.
+- Versions are dates (`YYYY-MM-DD` in package.json and manifest.json; a second release the same day is `YYYY-MM-DD.1`, then `.2`) and drive the WhatsNew modal (shows on any change, not just newer). Add matching entries to `src/releaseNotes.ts` and `RELEASE-NOTES.md`; while that version is unmerged, amend its entry instead of adding another version.
 
 ### Theming
 
