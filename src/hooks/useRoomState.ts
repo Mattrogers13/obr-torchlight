@@ -33,6 +33,10 @@ const stamp = (key: string) => {
 
 const markSeen = (key: string, seq: number) => ourSeen.set(key, Math.max(ourSeen.get(key) ?? 0, seq));
 
+// Docs whose latest write of ours failed: the room's copy must be taken over
+// what we show, even if the room's copy is an older write of ours.
+const revertTo = new Set<string>();
+
 // One of our writes to this doc hasn't landed (or failed) yet.
 const inFlight = (key: string) => (ourSeen.get(key) ?? 0) < (ourLatest.get(key) ?? 0);
 
@@ -42,6 +46,10 @@ const inFlight = (key: string) => (ourSeen.get(key) ?? 0) < (ourLatest.get(key) 
 // flight: ours lands after it and replaces it, so taking it would only build
 // our next change on a state the room is about to drop.
 const takeIncoming = (key: string, doc: { writer: string; seq: number }) => {
+  if (revertTo.delete(key)) {
+    if (doc.writer === WRITER) markSeen(key, doc.seq);
+    return true;
+  }
   if (doc.writer === WRITER) {
     markSeen(key, doc.seq);
     return doc.seq >= (ourLatest.get(key) ?? 0);
@@ -101,20 +109,27 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
     setPlayerDocs(docs);
   }, []);
 
-  const resync = useCallback(
-    () =>
-      OBR.room
-        .getMetadata()
-        .then((metadata) => apply(metadata, true))
-        .catch((err) =>
-          notify(`Torchlight couldn't load room state: ${errorMessage(err)}`, "ERROR"),
-        ),
-    [apply],
-  );
+  // Counts room change events. A getMetadata snapshot taken before an event
+  // that arrives while it's in flight is older than that event, so it's
+  // dropped rather than rolling the event back.
+  const events = useRef(0);
+
+  const resync = useCallback(() => {
+    const asked = events.current;
+    return OBR.room
+      .getMetadata()
+      .then((metadata) => {
+        if (events.current === asked) apply(metadata, true);
+      })
+      .catch((err) => notify(`Torchlight couldn't load room state: ${errorMessage(err)}`, "ERROR"));
+  }, [apply]);
 
   useEffect(() => {
     resync().finally(() => setLoaded(true));
-    return OBR.room.onMetadataChange((metadata) => apply(metadata));
+    return OBR.room.onMetadataChange((metadata) => {
+      events.current += 1;
+      apply(metadata);
+    });
   }, [apply, resync]);
 
   // Resolves true once the write landed, false if it failed (in which case
@@ -124,15 +139,21 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
       // Once Owlbear settles the write (either way), it's no longer in flight,
       // even if its echo is never seen on its own (e.g. merged with a later
       // change). Only this write's seq is cleared, not newer ones.
-      const settle = () =>
-        Object.entries(update).forEach(([key, doc]) => markSeen(key, (doc as Stamp).seq ?? 0));
+      const settle = (failed: boolean) =>
+        Object.entries(update).forEach(([key, doc]) => {
+          const seq = (doc as Stamp).seq ?? 0;
+          markSeen(key, seq);
+          // Our latest change to this doc didn't save: show the room's copy
+          // again (a newer write still in flight would restore it anyway).
+          if (failed && (ourLatest.get(key) ?? 0) === seq) revertTo.add(key);
+        });
       return OBR.room.setMetadata(update).then(
         () => {
-          settle();
+          settle(false);
           return true;
         },
         (err) => {
-          settle();
+          settle(true);
           // Room metadata is capped at 16kB shared by all extensions, so a
           // write can fail. Say so and fall back to what the room holds.
           notify(`Torchlight couldn't save: ${errorMessage(err)}`, "ERROR");

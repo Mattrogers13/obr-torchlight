@@ -830,5 +830,58 @@ describe("Main (Torchlight)", () => {
       while (room.echoQueue.length) await flushEcho();
     });
   });
+
+  describe("seventh review fixes", () => {
+    it("a failed save after our own good one puts the room's state back on screen", async () => {
+      room.metadata = { [ROOM_KEY]: { rev: 0, lights: [turnTorch(0)] } };
+      render(<Main player={false} />);
+      const plus = await screen.findByTitle("Burn a turn");
+      fireEvent.click(plus); // saved: 1 turn
+      expect(await screen.findByText("1 / 10")).toBeInTheDocument();
+      room.failWrites = true;
+      fireEvent.click(plus); // fails
+      await waitFor(() =>
+        expect(OBR.notification.show).toHaveBeenCalledWith("Torchlight couldn't save: Metadata too large", "ERROR"),
+      );
+      expect(await screen.findByText("1 / 10")).toBeInTheDocument();
+      expect(screen.queryByText("2 / 10")).not.toBeInTheDocument();
+    });
+
+    it("a burn-out is announced once it's recorded, not before", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        room.metadata = { [ROOM_KEY]: { lights: [burnedOutTorch(false)] } };
+        room.failWrites = true;
+        render(<Main player={false} />);
+        await waitFor(() =>
+          expect(OBR.notification.show).toHaveBeenCalledWith("Torchlight couldn't save: Metadata too large", "ERROR"),
+        );
+        expect(OBR.broadcast.sendMessage).not.toHaveBeenCalled();
+        room.failWrites = false;
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(BURN_OUT_RETRY_MS + 1500);
+        });
+        await waitFor(() => expect(OBR.broadcast.sendMessage).toHaveBeenCalledTimes(1));
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("a room snapshot that resolves after a newer change doesn't roll it back", async () => {
+      let resolveSnapshot: (m: Record<string, unknown>) => void = () => {};
+      const before = { [ROOM_KEY]: { rev: 0, lights: [] } };
+      vi.mocked(OBR.room.getMetadata).mockImplementationOnce(
+        () => new Promise((resolve) => (resolveSnapshot = resolve as typeof resolveSnapshot)),
+      );
+      render(<Main player={false} />);
+      // Another GM's change arrives while the initial load is still in flight.
+      await act(async () => {
+        room.metadata = { [ROOM_KEY]: { rev: 1, writer: "gm-b", seq: 1, lights: [turnTorch(0)] } };
+        room.listeners.forEach((l) => l(room.metadata));
+      });
+      await act(async () => resolveSnapshot(before)); // the older snapshot lands last
+      expect(await screen.findByText("Lantern", { selector: "li span" })).toBeInTheDocument();
+    });
+  });
 });
 

@@ -8,6 +8,7 @@ import Navbar from "./Navbar";
 import { paths } from "./util/constants";
 import { useTheme } from "../hooks/useTheme";
 import { ColorMode } from "../themes";
+import { errorMessage } from "../utils";
 
 export default function SPA() {
   // Unknown until OBR reports it, so a player never briefly runs the GM view.
@@ -36,6 +37,7 @@ export default function SPA() {
     // Without a role nothing renders, so a failed lookup retries (backing off
     // to 30 s), but only while we're still mounted.
     let alive = true;
+    let gotRole = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let wait = 2000;
     const loadRole = () =>
@@ -43,14 +45,18 @@ export default function SPA() {
         .getRole()
         .then((r) => alive && setRole(r))
         .catch((err) => {
-          console.warn(`Torchlight couldn't get the player role, retrying: ${err}`);
-          if (!alive) return;
+          // player.onChange may have delivered the role meanwhile.
+          if (!alive || gotRole) return;
+          console.warn(`Torchlight couldn't get the player role, retrying: ${errorMessage(err)}`);
           retry = setTimeout(loadRole, wait);
           wait = Math.min(wait * 2, 30_000);
         });
     loadRole();
     const offTheme = OBR.theme.onChange((theme) => setTheme(theme.mode.toLowerCase()));
-    const offPlayer = OBR.player.onChange((player: Player) => setRole(player.role));
+    const offPlayer = OBR.player.onChange((player: Player) => {
+      gotRole = true;
+      setRole(player.role);
+    });
     return () => {
       alive = false;
       clearTimeout(retry);
