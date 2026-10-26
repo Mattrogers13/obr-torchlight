@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { ROOM_KEY, playerKey } from "./constants";
 import {
   LIMITS,
   adjustTime,
@@ -16,6 +17,7 @@ import {
   SOURCES,
   burnKey,
   mapLights,
+  torchlightSignature,
   pruneBurnedOut,
   setAsideLight,
   remainingSec,
@@ -173,13 +175,13 @@ describe("parseRoomState (untrusted metadata)", () => {
   it("returns empty state for missing or non-object data", () => {
     for (const raw of [undefined, null, 42, "x", [], true]) {
       expect(parseRoomState(raw)).toEqual({
-        writer: "", seq: 0, lights: [], showToPlayers: false, playersCanAdd: false, playersCanRemove: false, burnedOut: [],
+        rev: 0, writer: "", seq: 0, lights: [], showToPlayers: false, playersCanAdd: false, playersCanRemove: false, burnedOut: [],
       });
     }
   });
 
   it("round-trips valid state", () => {
-    const state = { writer: "ab12", seq: 3, lights: [valid], showToPlayers: true, playersCanAdd: true, playersCanRemove: false, burnedOut: ["x#1"] };
+    const state = { rev: 7, writer: "ab12", seq: 3, lights: [valid], showToPlayers: true, playersCanAdd: true, playersCanRemove: false, burnedOut: ["x#1"] };
     expect(parseRoomState(JSON.parse(JSON.stringify(state)))).toEqual(state);
   });
 
@@ -235,7 +237,7 @@ describe("parsePlayerDoc (untrusted metadata)", () => {
 
   it("returns an empty doc for junk", () => {
     for (const raw of [undefined, null, 42, "x", []]) {
-      expect(parsePlayerDoc(raw)).toEqual({ writer: "", seq: 0, ownerName: "", lights: [] });
+      expect(parsePlayerDoc(raw)).toEqual({ rev: 0, writer: "", seq: 0, ownerName: "", lights: [] });
     }
   });
 
@@ -366,3 +368,15 @@ describe("burn-out record", () => {
   });
 });
 
+describe("torchlightSignature", () => {
+  it("ignores other extensions' metadata and key order", () => {
+    const ours = { [ROOM_KEY]: { rev: 1 }, [playerKey("p1")]: { rev: 2 } };
+    const a = torchlightSignature({ ...ours, "other.ext/x": 1 });
+    const b = torchlightSignature({ "other.ext/x": 99, [playerKey("p1")]: { rev: 2 }, [ROOM_KEY]: { rev: 1 } });
+    expect(a).toBe(b);
+  });
+
+  it("changes when our data changes", () => {
+    expect(torchlightSignature({ [ROOM_KEY]: { rev: 1 } })).not.toBe(torchlightSignature({ [ROOM_KEY]: { rev: 2 } }));
+  });
+});

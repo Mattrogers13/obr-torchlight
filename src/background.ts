@@ -3,7 +3,7 @@ import OBR, { ContextMenuItem } from "@owlbear-rodeo/sdk";
 import { ID, ROOM_KEY } from "./constants";
 import { parsePlayersCanAdd } from "./lights";
 import { startTokenSync } from "./tokenSync";
-import { errorMessage } from "./utils";
+import { errorMessage, onRoleChange } from "./utils";
 
 // Runs whenever Torchlight is enabled in the room, panel open or not.
 // Adds one "Torchlight" entry to the right-click menu of character tokens;
@@ -91,12 +91,7 @@ OBR.onReady(async () => {
     lastAllowFlag = flag;
     requestSync();
   });
-  let lastRole: string | null = null;
-  OBR.player.onChange((player) => {
-    if (player.role === lastRole) return;
-    lastRole = player.role;
-    requestSync();
-  });
+  onRoleChange(() => requestSync());
   // GM only (checked inside): token lights and badges follow the timers.
   startTokenSync();
 });
