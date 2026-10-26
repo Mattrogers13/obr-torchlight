@@ -9,6 +9,7 @@ import {
   LightSource,
   SOURCES,
   SOURCE_IDS,
+  TIME_PASSES,
   formatClock,
   isActive,
   isOut,
@@ -284,10 +285,12 @@ export const ActiveFilter: React.FC<{ checked: boolean; onToggle: () => void }> 
   </label>
 );
 
-// GM controls at the top of the panel. "Put out" opens a checklist of what's
-// burning, with flames (torches, lanterns) pre-checked: wind and water put
-// out flames on a failed DC 15 DEX check, a Light spell only to a Dud or a
-// dispel (rules p.110). Remove all asks for a second click.
+// GM controls at the top of the panel. "Turn out all the lights" asks All
+// or Non-magical (everything but Light spells), or offers a checklist with
+// flames (torches, lanterns) pre-checked: wind and water put out flames on
+// a failed DC 15 DEX check, a Light spell only to a Dud or a dispel (rules
+// p.110). Remove all asks for a second click. Time passes takes minutes off
+// every lit real-time light.
 export const GmBulkActions: React.FC<{
   entries: LightEntry[];
   now: number;
@@ -296,7 +299,9 @@ export const GmBulkActions: React.FC<{
   onSetAllRunning: (running: boolean) => void;
   onPutOut: (ids: Set<string>) => void;
   onRemoveAll: () => void;
-}> = ({ entries, now, canPauseAll, canResumeAll, onSetAllRunning, onPutOut, onRemoveAll }) => {
+  canPassTime: boolean;
+  onPassTime: (minutes: number) => void;
+}> = ({ entries, now, canPauseAll, canResumeAll, onSetAllRunning, onPutOut, onRemoveAll, canPassTime, onPassTime }) => {
   const [mode, setMode] = useState<"put-out" | "remove" | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const burning = entries.filter((e) => isActive(e.light, now));
@@ -307,9 +312,14 @@ export const GmBulkActions: React.FC<{
   const small = "px-2 py-1 text-sm text-white rounded transition-colors";
   const enabled = (on: boolean) => (on ? "" : "opacity-50 cursor-not-allowed");
 
+  const flames = burning.filter((e) => SOURCES[e.light.source].flame);
   const openPutOut = () => {
-    setChecked(new Set(burning.filter((e) => SOURCES[e.light.source].flame).map((e) => e.light.id)));
+    setChecked(new Set(flames.map((e) => e.light.id)));
     setMode("put-out");
+  };
+  const putOutNow = (hit: LightEntry[]) => {
+    onPutOut(new Set(hit.map((e) => e.light.id)));
+    setMode(null);
   };
   const toggle = (id: string) =>
     setChecked((prev) => {
@@ -334,17 +344,45 @@ export const GmBulkActions: React.FC<{
           disabled={burning.length === 0}
           className={`${small} bg-theme-secondary ${enabled(burning.length > 0)}`}
         >
-          Put out…
+          Turn out all the lights…
         </button>
         <button onClick={() => setMode("remove")} className={`${small} bg-theme-danger`}>
           Remove all
         </button>
       </div>
 
+      <div className="flex flex-wrap items-center gap-1 mt-2">
+        <span className="text-sm text-theme-secondary mr-1">Time passes:</span>
+        {TIME_PASSES.map((m) => (
+          <button
+            key={m}
+            onClick={() => onPassTime(m)}
+            disabled={!canPassTime}
+            aria-label={`${m} minutes pass`}
+            className={`${small} bg-theme-secondary ${enabled(canPassTime)}`}
+          >
+            {m >= 60 ? `${m / 60} hr` : `${m}m`}
+          </button>
+        ))}
+      </div>
+
       {mode === "put-out" && (
         <div className="mt-2 p-3 rounded border border-theme bg-theme-card">
+          <div className="flex flex-wrap gap-2 mb-3">
+            <button onClick={() => putOutNow(burning)} className={`${small} bg-theme-danger`}>
+              All ({burning.length})
+            </button>
+            <button
+              onClick={() => putOutNow(flames)}
+              disabled={flames.length === 0}
+              title="Everything but Light spells"
+              className={`${small} bg-theme-danger ${enabled(flames.length > 0)}`}
+            >
+              Non-magical ({flames.length})
+            </button>
+          </div>
           <p className="text-sm text-theme-secondary mb-2">
-            Torches and lanterns are checked: wind and water put out flames. Uncheck anyone who made
+            Or pick: torches and lanterns are checked: wind and water put out flames. Uncheck anyone who made
             their DEX save.
           </p>
           <ul className="flex flex-col gap-1 mb-3">
@@ -370,7 +408,7 @@ export const GmBulkActions: React.FC<{
               disabled={toPutOut.size === 0}
               className={`${small} bg-theme-danger ${enabled(toPutOut.size > 0)}`}
             >
-              Put out {toPutOut.size}
+              Put out {toPutOut.size} checked
             </button>
             <button onClick={() => setMode(null)} className={`${small} bg-theme-secondary`}>
               Cancel

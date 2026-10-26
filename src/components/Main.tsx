@@ -1,7 +1,7 @@
 import React, { useMemo, useRef } from "react";
 import OBR from "@owlbear-rodeo/sdk";
 
-import { useGmAlerts, useLightOutListener } from "../hooks/useGmAlerts";
+import { useGmAlerts } from "../hooks/useGmAlerts";
 import { useNow } from "../hooks/useNow";
 import { useRoomState } from "../hooks/useRoomState";
 import { isOut, isRunning } from "../lights";
@@ -34,7 +34,6 @@ const Main: React.FC<{ player: boolean }> = ({ player }) => {
   const lastTick = useRef(Date.now());
   const now = useNow(entries.some((e) => isRunning(e.light) && !isOut(e.light, lastTick.current)));
   lastTick.current = now;
-  useLightOutListener();
   const { removedByMe, restoredAfterFailure } = useGmAlerts({ gm: !player, loaded, entries, state, now, update });
 
   if (!loaded) return <div className="p-4 text-theme-secondary">Loading…</div>;

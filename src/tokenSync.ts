@@ -4,9 +4,11 @@ import { ID, ROOM_KEY } from "./constants";
 import {
   Light,
   LightSource,
+  RoomState,
   SOURCES,
   isActive,
   isRunning,
+  remainingSec,
   parsePlayerDocs,
   parseRoomState,
   torchlightSignature,
@@ -16,7 +18,8 @@ import { errorMessage, onRoleChange } from "./utils";
 // Keeps tokens' Dynamic Fog lights in step with Torchlight's timers: a token
 // with a burning light gets that source's light and a small badge; when the
 // light stops (burns out, is put out, or is swapped for a new one) the
-// token's previous light comes back. A Pause all for a table break leaves
+// token's previous light comes back, or the GM's unlit light (3 ft by
+// default) if it had none. A Pause all for a table break leaves
 // the token lit. Runs from the GM's background page.
 
 // Dynamic Fog stores a token's light here (github.com/owlbear-rodeo/dynamic-fog).
@@ -109,7 +112,7 @@ export interface BadgeState {
 // PNG, not SVG: Chrome can't decode SVG into the canvas textures Owlbear
 // draws items with (createImageBitmap fails), so an SVG badge showed as a
 // black square there. Sources: art/badges/*.svg.
-export const badgeImage = (origin: string, source: LightSource) => `${origin}/img/badge-${source}.png`;
+export const badgeImage = (origin: string, source: LightSource) => `${origin}/img/badge-${source}.webp`;
 
 export interface SyncPlan {
   apply: { tokenId: string; source: LightSource; saved: unknown }[];
@@ -123,13 +126,15 @@ const sameLight = (a: unknown, b: DfLight) =>
   a !== null &&
   (Object.keys(b) as (keyof DfLight)[]).every((k) => (a as Record<string, unknown>)[k] === b[k]);
 
-// Pure: what to change so the scene matches `desired`.
+// Pure: what to change so the scene matches `desired`. `unlit` is the light
+// a token goes back to when it had none before we lit it (null = none).
 export const planSync = (
   desired: Map<string, LightSource>,
   tokens: TokenState[],
   badges: BadgeState[],
   pxFor: (source: LightSource) => number,
   imageFor: (source: LightSource) => string = () => "",
+  unlit: DfLight | null = null,
 ): SyncPlan => {
   const plan: SyncPlan = { apply: [], restore: [], addBadges: [], deleteBadges: [] };
   const present = new Set(tokens.map((t) => t.id));
@@ -144,7 +149,7 @@ export const planSync = (
         plan.apply.push({ tokenId: token.id, source: want, saved: token.marker.saved });
       }
     } else if (token.marker) {
-      plan.restore.push({ tokenId: token.id, saved: token.marker.saved });
+      plan.restore.push({ tokenId: token.id, saved: token.marker.saved ?? unlit });
     }
   }
 
@@ -193,8 +198,8 @@ const parseMarker = (v: unknown): TokenMarker | undefined => {
     : undefined;
 };
 
-const allLights = (metadata: Record<string, unknown>): OwnedLight[] => {
-  const owned: OwnedLight[] = parseRoomState(metadata[ROOM_KEY]).lights.map((light) => ({ light, ownerId: null }));
+const allLights = (metadata: Record<string, unknown>, state: RoomState): OwnedLight[] => {
+  const owned: OwnedLight[] = state.lights.map((light) => ({ light, ownerId: null }));
   for (const [ownerId, doc] of Object.entries(parsePlayerDocs(metadata))) {
     owned.push(...doc.lights.map((light) => ({ light, ownerId })));
   }
@@ -206,7 +211,7 @@ const badge = (token: Item, source: LightSource, dpi: number): Image => {
   const size = 128;
   const offset = (dpi / 2) * Math.max(token.scale.x, 0.5) * 0.75;
   return buildImage(
-    { width: size, height: size, mime: "image/png", url: badgeImage(window.location.origin, source) },
+    { width: size, height: size, mime: "image/webp", url: badgeImage(window.location.origin, source) },
     { dpi: size / 0.35, offset: { x: size / 2, y: size / 2 } },
   )
     .name(`${SOURCES[source].label} (Torchlight)`)
@@ -231,7 +236,8 @@ export const syncOnce = async () => {
   if (role !== "GM" || !ready) return;
 
   const now = Date.now();
-  const owned = allLights(metadata);
+  const state = parseRoomState(metadata[ROOM_KEY]);
+  const owned = allLights(metadata, state);
   const linked = new Set(owned.map((o) => o.light.tokenId).filter((id): id is string => !!id));
 
   // One pass over the scene for both linked tokens and our badges.
@@ -253,8 +259,8 @@ export const syncOnce = async () => {
     now,
     (tokenId, ownerId) => ownerId === null || playerMayLight(tokensById.get(tokenId), ownerId, permissions),
   );
-  const pxFor = (source: LightSource) =>
-    rangePx(SOURCES[source].rangeFt, dpi, scale.parsed.unit, scale.parsed.multiplier);
+  const pxForFt = (ft: number) => rangePx(ft, dpi, scale.parsed.unit, scale.parsed.multiplier);
+  const pxFor = (source: LightSource) => pxForFt(SOURCES[source].rangeFt);
 
   const plan = planSync(
     desired,
@@ -274,6 +280,7 @@ export const syncOnce = async () => {
     }),
     pxFor,
     (source) => badgeImage(window.location.origin, source),
+    state.unlitFt > 0 ? dfLight(pxForFt(state.unlitFt)) : null,
   );
 
   const apply = new Map(plan.apply.map((a) => [a.tokenId, a]));
@@ -305,22 +312,21 @@ export const syncOnce = async () => {
   return owned.map((o) => o.light);
 };
 
-// Cap on any wake-up delay: well under setTimeout's 2^31-1 ms limit (longer
-// delays fire at once), and doubles as a daily recheck.
-const MAX_TIMER_MS = 24 * 60 * 60 * 1000;
-// How soon to retry after a failed sync.
+// Retry after a failed sync: 10 s, doubling per consecutive failure, up to 5 min.
 export const SYNC_RETRY_MS = 10_000;
+const SYNC_RETRY_MAX_MS = 5 * 60_000;
 
-// When to rerun: just after the next linked light runs out, sooner after a
-// failure, never at all if nothing is burning. endsAt comes from room metadata
-// and can be forged; setTimeout fires at once for delays past 2^31-1 ms, which
-// would spin the sync in a tight loop, so the delay is capped.
-export const nextSyncDelay = (lights: Light[], now: number, failed: boolean): number | null => {
+// When to rerun: just after the next linked light runs out, and soon after a
+// failure (even with nothing burning, since the failed run may have left a
+// token lit).
+export const nextSyncDelay = (lights: Light[], now: number, retryMs: number | null): number | null => {
+  // remainingSec is capped at the light's duration (at most 24 h), so a forged
+  // endsAt can't produce a delay past setTimeout's limit.
   const next = lights
-    .filter((l) => l.tokenId && isRunning(l) && l.endsAt! > now)
-    .reduce((min, l) => Math.min(min, l.endsAt!), Infinity);
-  const delay = next === Infinity ? Infinity : Math.min(next - now + 250, MAX_TIMER_MS);
-  const wait = failed ? Math.min(delay, SYNC_RETRY_MS) : delay;
+    .filter((l) => l.tokenId && isRunning(l) && remainingSec(l, now) > 0)
+    .reduce((min, l) => Math.min(min, remainingSec(l, now) * 1000), Infinity);
+  const delay = next === Infinity ? Infinity : next + 250;
+  const wait = retryMs !== null ? Math.min(delay, retryMs) : delay;
   return wait === Infinity ? null : wait;
 };
 
@@ -333,10 +339,13 @@ export const startTokenSync = () => {
 
   // Lights from the last good run, so a failed run can still schedule.
   let known: Light[] = [];
+  // Consecutive failures, for the retry back-off.
+  let failures = 0;
 
-  const schedule = (failed: boolean) => {
+  const schedule = () => {
     clearTimeout(timer);
-    const wait = nextSyncDelay(known, Date.now(), failed);
+    const retryMs = failures > 0 ? Math.min(SYNC_RETRY_MS * 2 ** (failures - 1), SYNC_RETRY_MAX_MS) : null;
+    const wait = nextSyncDelay(known, Date.now(), retryMs);
     if (wait !== null) timer = setTimeout(run, wait);
   };
 
@@ -346,20 +355,21 @@ export const startTokenSync = () => {
       return;
     }
     busy = true;
-    let failed = false;
     try {
       do {
         again = false;
         // undefined = not the GM or no scene: nothing of ours to wake up for.
         known = (await syncOnce()) ?? [];
       } while (again);
+      failures = 0;
     } catch (err) {
-      // Retry soon: a token whose light runs out meanwhile must still go dark.
-      failed = true;
+      // Retry (backing off): a token whose light runs out meanwhile must
+      // still go dark.
+      failures += 1;
       console.error(`Torchlight token sync failed: ${errorMessage(err)}`);
     } finally {
       busy = false;
-      schedule(failed);
+      schedule();
     }
   };
 

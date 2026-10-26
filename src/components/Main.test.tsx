@@ -3,7 +3,7 @@ import { render, renderHook, screen, fireEvent, waitFor, act } from "@testing-li
 import OBR from "@owlbear-rodeo/sdk";
 
 import Main from "./Main";
-import { LIGHT_OUT_CHANNEL } from "../alerts";
+import { LIGHT_OUT_CHANNEL, TIME_PASSES_CHANNEL } from "../alerts";
 import { BURN_OUT_RETRY_MS } from "../hooks/useGmAlerts";
 import { ROOM_KEY, playerKey } from "../constants";
 import { useRoomState } from "../hooks/useRoomState";
@@ -478,11 +478,11 @@ describe("Main (Torchlight)", () => {
         [playerKey("p2")]: { rev: 1, ownerName: "Bo", lights: [burning("c", "Bo's lantern", "lantern")] },
       };
       render(<Main player={false} />);
-      fireEvent.click(await screen.findByText("Put out…"));
+      fireEvent.click(await screen.findByText("Turn out all the lights…"));
       expect(screen.getByRole("checkbox", { name: /Kira's torch/ })).toBeChecked();
       expect(screen.getByRole("checkbox", { name: /Bo's lantern/ })).toBeChecked();
       expect(screen.getByRole("checkbox", { name: /Ash's Light spell/ })).not.toBeChecked();
-      fireEvent.click(screen.getByText("Put out 2"));
+      fireEvent.click(screen.getByText("Put out 2 checked"));
 
       await waitFor(() => expect(stored().lights[0]).toMatchObject({ setAside: "put-out", endsAt: null }));
       expect(stored().lights[1]).toMatchObject({ setAside: null });
@@ -491,6 +491,65 @@ describe("Main (Torchlight)", () => {
         LIGHT_OUT_CHANNEL, ["Kira's torch", "Bo's lantern"], { destination: "ALL" },
       );
       expect(screen.getAllByText("Put out").length).toBe(2);
+    });
+
+    it("Turn out all: Non-magical spares the Light spell, All doesn't", async () => {
+      const lights = () => ({
+        [ROOM_KEY]: { lights: [burning("a", "Kira's torch", "torch"), burning("b", "Ash's Light spell", "light-spell")] },
+      });
+      room.metadata = lights();
+      const { unmount } = render(<Main player={false} />);
+      fireEvent.click(await screen.findByText("Turn out all the lights…"));
+      fireEvent.click(screen.getByText("Non-magical (1)"));
+      await waitFor(() => expect(stored().lights[0]).toMatchObject({ setAside: "put-out" }));
+      expect(stored().lights[1]).toMatchObject({ setAside: null });
+      unmount();
+
+      room.metadata = lights();
+      render(<Main player={false} />);
+      fireEvent.click(await screen.findByText("Turn out all the lights…"));
+      fireEvent.click(screen.getByText("All (2)"));
+      await waitFor(() => expect(stored().lights[1]).toMatchObject({ setAside: "put-out" }));
+      expect(stored().lights[0]).toMatchObject({ setAside: "put-out" });
+    });
+
+    it("Time passes takes minutes off every lit light, players' included, in one write", async () => {
+      const hour = (id: string, name: string) => ({
+        ...burning(id, name, "torch"), durationSec: 3600, remainingSec: 3600, endsAt: Date.now() + 3600_000,
+      });
+      room.metadata = {
+        [ROOM_KEY]: { lights: [hour("a", "Kira's torch"), { ...hour("b", "Spare"), endsAt: null }] },
+        [playerKey("p2")]: { rev: 1, ownerName: "Bo", lights: [hour("c", "Bo's torch")] },
+      };
+      render(<Main player={false} />);
+      fireEvent.click(await screen.findByLabelText("30 minutes pass"));
+      await waitFor(() => expect(OBR.room.setMetadata).toHaveBeenCalledTimes(1));
+      const left = (l: { endsAt: number | null; remainingSec: number }) =>
+        l.endsAt === null ? l.remainingSec : Math.round((l.endsAt - Date.now()) / 1000);
+      expect(left(stored().lights[0] as never)).toBeLessThanOrEqual(1800);
+      expect(left(stored().lights[0] as never)).toBeGreaterThan(1790);
+      expect(stored().lights[1]).toMatchObject({ endsAt: null, remainingSec: 1800 });
+      expect(left((room.metadata[playerKey("p2")] as { lights: never[] }).lights[0])).toBeLessThanOrEqual(1800);
+      await waitFor(() =>
+        expect(OBR.broadcast.sendMessage).toHaveBeenCalledWith(TIME_PASSES_CHANNEL, 30, { destination: "ALL" }),
+      );
+    });
+
+    it("the unlit light setting is saved in the shared state", async () => {
+      room.metadata = { [ROOM_KEY]: { lights: [] } };
+      render(<Main player={false} />);
+      const input = await screen.findByRole("spinbutton", { name: /Light when unlit/ });
+      expect(input).toHaveValue(3);
+      // Clearing to retype doesn't write; junk snaps back.
+      fireEvent.change(input, { target: { value: "" } });
+      fireEvent.blur(input);
+      expect(input).toHaveValue(3);
+      expect(OBR.room.setMetadata).not.toHaveBeenCalled();
+      // Saved on blur, clamped to 30.
+      fireEvent.change(input, { target: { value: "45" } });
+      fireEvent.blur(input);
+      await waitFor(() => expect(stored()).toMatchObject({ unlitFt: 30 }));
+      expect(input).toHaveValue(30);
     });
 
     it("Resume all leaves put-out lights out", async () => {
@@ -584,8 +643,8 @@ describe("Main (Torchlight)", () => {
     it("Put out across players is one write", async () => {
       room.metadata = room3();
       render(<Main player={false} />);
-      fireEvent.click(await screen.findByText("Put out…"));
-      fireEvent.click(screen.getByText("Put out 3"));
+      fireEvent.click(await screen.findByText("Turn out all the lights…"));
+      fireEvent.click(screen.getByText("Put out 3 checked"));
       await waitFor(() => expect(OBR.room.setMetadata).toHaveBeenCalledTimes(1));
       expect(room.metadata[playerKey("p2")]).toMatchObject({ lights: [{ setAside: "put-out" }] });
     });
@@ -756,8 +815,8 @@ describe("Main (Torchlight)", () => {
       room.metadata = { [ROOM_KEY]: { lights: [lit("a", "Kira's torch")] } };
       room.failWrites = true;
       render(<Main player={false} />);
-      fireEvent.click(await screen.findByText("Put out…"));
-      fireEvent.click(screen.getByText("Put out 1"));
+      fireEvent.click(await screen.findByText("Turn out all the lights…"));
+      fireEvent.click(screen.getByText("Put out 1 checked"));
       await waitFor(() =>
         expect(OBR.notification.show).toHaveBeenCalledWith("Torchlight couldn't save: Metadata too large", "ERROR"),
       );
@@ -847,21 +906,22 @@ describe("Main (Torchlight)", () => {
       expect(screen.queryByText("2 / 10")).not.toBeInTheDocument();
     });
 
-    it("a burn-out is announced once it's recorded, not before", async () => {
+    it("a burn-out is announced at once even if its record can't be saved, and only once", async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       try {
         room.metadata = { [ROOM_KEY]: { lights: [burnedOutTorch(false)] } };
-        room.failWrites = true;
+        room.failWrites = true; // e.g. the room is at its 16 kB cap
         render(<Main player={false} />);
         await waitFor(() =>
-          expect(OBR.notification.show).toHaveBeenCalledWith("Torchlight couldn't save: Metadata too large", "ERROR"),
+          expect(OBR.broadcast.sendMessage).toHaveBeenCalledWith(LIGHT_OUT_CHANNEL, ["Kira's torch"], {
+            destination: "ALL",
+          }),
         );
-        expect(OBR.broadcast.sendMessage).not.toHaveBeenCalled();
-        room.failWrites = false;
+        // The record keeps retrying; the alert doesn't repeat.
         await act(async () => {
-          await vi.advanceTimersByTimeAsync(BURN_OUT_RETRY_MS + 1500);
+          await vi.advanceTimersByTimeAsync(BURN_OUT_RETRY_MS * 2 + 1500);
         });
-        await waitFor(() => expect(OBR.broadcast.sendMessage).toHaveBeenCalledTimes(1));
+        expect(OBR.broadcast.sendMessage).toHaveBeenCalledTimes(1);
       } finally {
         vi.useRealTimers();
       }
@@ -881,19 +941,6 @@ describe("Main (Torchlight)", () => {
       });
       await act(async () => resolveSnapshot(before)); // the older snapshot lands last
       expect(await screen.findByText("Lantern", { selector: "li span" })).toBeInTheDocument();
-    });
-  });
-
-  describe("eighth review fixes", () => {
-    it("a light reset while its burn-out record is still saving isn't announced", async () => {
-      room.metadata = { [ROOM_KEY]: { lights: [burnedOutTorch(false)] } };
-      room.deferWrites = true;
-      render(<Main player={false} />);
-      await screen.findByText("Kira's torch");
-      await waitFor(() => expect(room.writeQueue.length).toBeGreaterThan(0)); // record in flight
-      fireEvent.click(screen.getByTitle("Reset")); // re-armed before it lands
-      while (room.writeQueue.length) await flushWrite();
-      expect(OBR.broadcast.sendMessage).not.toHaveBeenCalled();
     });
   });
 

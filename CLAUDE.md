@@ -42,6 +42,12 @@ Node 24 required (`.node-version`, fnm auto-switches on cd). Node 25+ breaks vit
 
 Tests mock the OBR SDK in memory (`Main.test.tsx`: room metadata, broadcast, notification). SDK calls return promises, so mocks must too.
 
+Mock modes: `room.deferWrites` + `flushWrite()` apply, emit and resolve each write in room order (use for sync races); `deferEchoes` only delays echoes. Never `act(() => fnReturningPromise())`: use a block body, or every later test renders empty.
+
+Per-test mock behavior: `vi.spyOn(obj, "fn").mockImplementation(...)`, never assign over a mock. `clearAllMocks` (our `beforeEach`) keeps implementations; `resetAllMocks` restores each `vi.fn`'s own; `restoreAllMocks` does NOT undo a spyOn over a `vi.fn`. Passes alone, fails in the full run = a leaked mock.
+
+A regression test must fail on the old code: `cp file /tmp/x.bak && git show <ref>:file > file`, run it, then `cp` back. Never `git checkout -- file` for this (wipes uncommitted edits).
+
 ## Architecture
 
 ### Dual-Mode Application
@@ -53,11 +59,14 @@ The app has two distinct entry modes controlled by URL parameters:
 
 Entry point: `src/main.tsx`
 
-A second page, `background.html` → `src/background.ts` (manifest `background_url: "/background"`; Cloudflare 307s `.html` URLs to the extensionless path), runs while Torchlight is enabled in the room, panel open or not. It registers one "Torchlight" token right-click entry whose embedded submenu is a third page, `menu.html` → `src/menu.ts` (embed url `/menu`, plain DOM, no React): Light torch / Light lantern / Cast Light. Both write through `src/lightFromTokens.ts` (same permission rules as the panel). Keep it free of React imports; metadata keys live in `util/constants.ts` for that reason.
+A second page, `background.html` → `src/background.ts` (manifest `background_url: "/background"`; Cloudflare 307s `.html` URLs to the extensionless path), runs while Torchlight is enabled in the room, panel open or not. It registers one "Torchlight" token right-click entry whose embedded submenu is a third page, `menu.html` → `src/menu.ts` (embed url `/menu`, plain DOM, no React): Light torch / Light lantern / Cast Light / Put out light (height `MENU_HEIGHT` in background.ts tracks the row count). Both write through `src/lightFromTokens.ts` (same permission rules as the panel). Keep it free of React imports; metadata keys live in `src/constants.ts` for that reason.
 
-On the GM's client the background page also runs `src/tokenSync.ts`: every token with an active linked light (`tokenId`) gets that source's Dynamic Fog light (`rodeo.owlbear.dynamic-fog/light`: range from `SOURCES` converted with the grid scale, full circle, PRIMARY, solid edge `falloff: 0.2`) plus a badge attachment (`public/img/badge-<source>.png`). Item images must be PNG/JPG/WebP, never SVG: Chrome can't decode SVG into Owlbear's canvas textures and draws a black square. Badge sources are `art/badges/*.svg`; regenerate a PNG with headless Chrome at 128×128 on a transparent background (ImageMagick drops stroked SVG paths). Badges whose image URL isn't current are replaced automatically. The token's previous light (e.g. the GM's 3 ft light so players can see their own token) is saved under `${ID}/token` and restored when the light stops: burns out, put out, or swapped. A Pause all leaves tokens lit. It runs on room changes, scene load, and a timer at the next burn-out, so it works with no panel open. The decision is the pure `planSync` (tested); the rest is SDK calls. Player docs can be forged, so a player's light only reaches a token that is visible and that the room's permissions would let that player edit (`playerMayLight`: `CHARACTER_UPDATE`, plus `CHARACTER_OWNER_ONLY` → `createdUserId`); otherwise a tampered doc could light a hidden monster through the GM's client. Saved lights are reduced to known Dynamic Fog fields (`parseDfLight`). Needs Dynamic Fog in the room to actually cast light; without it only the badge shows.
+On the GM's client the background page also runs `src/tokenSync.ts`: tokens with an active linked light get that source's Dynamic Fog light plus a badge, and get their previous light back when it stops. Details (light shape, badge regeneration, `planSync`, when it runs): `docs/token-sync.md`. Rules not to break:
 
-The plugin ID `"io.github.mattrogers13.torchlight"` is exported as `ID` from `src/constants.ts` (with the room metadata keys; `components/util/constants.ts` holds only route paths) and prefixes the room metadata key and broadcast channel.
+- Raster images are WebP (badges lossless, `mime: "image/webp"`). Item images must never be SVG (Chrome draws a black square in Owlbear's canvas). Exception: the manifest icon stays `logo.png` until Owlbear WebP support is confirmed.
+- Player docs can be forged: a player's light only reaches a token that is visible and that player could edit (`playerMayLight`), or a tampered doc could light a hidden monster through the GM's client.
+
+The plugin ID `"io.github.mattrogers13.torchlight"` is exported as `ID` from `src/constants.ts` (with the room metadata keys; `components/util/constants.ts` holds only route paths) and prefixes the room metadata keys and broadcast channels.
 
 ### Owlbear Rodeo Integration
 
@@ -68,9 +77,10 @@ The app uses `@owlbear-rodeo/sdk` for integration with Owlbear Rodeo:
 - **Theme Sync**: OBR's light/dark theme is applied by toggling the `dark` class on `<html>` in `SPA.tsx`
 - **Roles**: `SPA.tsx` renders nothing until `OBR.player.getRole()` resolves, so a player never briefly runs GM logic
 
-Shared state lives in OBR room metadata under `${ID}/state` (see State Management). One broadcast channel:
+Shared state lives in OBR room metadata under `${ID}/state` (see State Management). Two broadcast channels, both sent with `destination: "ALL"` and shown by `listenForAlerts` on the background page (never in the panel too, or clients with it open get two notices):
 
-- `${ID}/light-out`: array of light names that just burned out; sent by a GM client with `destination: "ALL"`, every client shows the notification
+- `${ID}/light-out`: array of light names that just burned out or were put out (GM panel, right-click menu)
+- `${ID}/time-passes`: minutes skipped by the GM's Time passes
 
 Manifest limits: `name` ≤ 45, `description` ≤ 128 chars (enforced by `src/manifest.test.ts`).
 
@@ -90,17 +100,14 @@ Route paths are defined in `src/components/util/constants.ts`.
 - **Main.tsx**: Wiring only: loads room state (`useRoomState`), builds the combined light list, runs the alert hooks, renders `GmPanel` or `PlayerPanel`
 - **GmPanel.tsx**: GM view and all GM actions (bulk actions, permissions, add, per-light controls)
 - **PlayerPanel.tsx**: Player view: one list (own lights first), add one at a time, remove own if allowed
-- **hooks/useGmAlerts.ts**: GM-only alerting (player lit/paused/removed notifications, burn-out detection/record/broadcast) and `useLightOutListener` (everyone)
-- **alerts.ts**: the `light-out` broadcast channel, its parser, and `broadcastLightOut`
+- **hooks/useGmAlerts.ts**: GM-only alerting (player lit/paused/removed notifications, burn-out detection/record/broadcast)
+- **alerts.ts**: the broadcast channels, their parsers, senders, and `listenForAlerts`
 - **Lights.tsx**: Add-light form, GM light rows, bulk actions, Active-only filter, and the player light list
 - **SPA.tsx**: Sets up router, detects player role, syncs OBR theme to `dark` CSS class
 - **Navbar.tsx**: Tab navigation (Main / About), renders the `WhatsNew` modal, shows dev mode banner
-- **About.tsx**: Hosts `ThemeSelector`, repo link, credit line, and version display (`VERSION` from `src/version.ts`, read from manifest.json at build time; nothing fetches the manifest at runtime)
+- **About.tsx**: Hosts `ThemeSelector`, repo link, credit line, and version display (`VERSION` from `src/version.ts`, read from manifest.json at build time; nothing fetches the manifest at runtime). On labeled (dev/preview) builds also renders `DebugInfo.tsx`
 - **ThemeSelector.tsx**: UI for switching between the 4 color palettes defined in `src/themes.ts`
 - **WhatsNew.tsx**: Modal that shows release highlights when the build's version differs from the one stored in localStorage
-- **PluginGate.tsx**: Waits for OBR SDK to be ready before rendering children
-- **OBRLoading.tsx**: Loading state shown while OBR initialises
-- **SceneNotReady.tsx**: Shown when OBR scene is not yet ready
 - **PlayerView.tsx**: Placeholder view shown to players when GM has not enabled "show to players"
 - **Homepage.tsx**: Standalone landing page (non-plugin mode)
 
@@ -113,17 +120,20 @@ Timer logic is pure functions in `src/lights.ts` (every time calc takes `now`, e
 - Everything read from room metadata goes through `parseRoomState` / `parsePlayerDocs`: any client or extension can write it.
 - Permissions are client-side only; a tampering client can write any key.
 - Staleness is by `writer`/`seq` stamps. Prepare every write with `restamp` (a copied doc that keeps another client's stamp is discarded as that client's echo).
-- `rev` is still written for panels on builds before 2026-10-15; remove it after 2026-11-15.
+- `rev` is still written for panels on builds up to 2026-10-15.7; remove it after 2026-11-15.
 - Never unlock the panel before the first room read lands (an empty state written back wipes the room).
 - Multi-player GM actions are one `updateLights` write. Edit with `mapLights`, not `.map`.
 - The GM never writes a player's doc just to mark a burn-out (`burnedOut` lives in shared state).
 - Room metadata is capped at 16 kB across all extensions.
+- New `RoomState` fields need a parse default: `parseRoomState` drops unknown keys, so a panel on an older build erases a new field on its next write (it reverts to the default until everyone updates).
+- For sync bugs, simplify the mechanism rather than add special cases (that cascaded across review rounds), and prefer a real Owlbear test over another review round.
 
 localStorage keys (per browser, not shared). Always go through `src/storage.ts` (`readLocal` / `writeLocal`): localStorage throws in Owlbear's iframe under strict privacy settings, and an unguarded read during render blanks the panel.
 
 - `torchlight-theme` — user's selected color palette (useTheme.ts)
 - `torchlight-last-seen-version` — last version seen, drives WhatsNew modal (Navbar.tsx)
 - `torchlight-active-only` — "Active lights only" list filter (useActiveOnly.ts)
+- `dev-mode` — `"true"` shows the dev banner (`isDevMode` in utils.ts, Navbar.tsx)
 
 ### Deployment
 
@@ -133,6 +143,7 @@ Two installs in Owlbear, each added once:
 
 - Live: `https://torchlight.editbag.workers.dev/manifest.json` (named "Torchlight")
 - Dev: `https://dev-torchlight.editbag.workers.dev/manifest.json` (the long-lived `dev` branch). Non-main builds rename the manifest to "Torchlight (Dev)" via `WORKERS_CI_BRANCH` (`src/devManifest.ts`, wired in `vite.config.js`).
+- Dev builds show `DEV · dev · <sha>` under the version on About. Confirm a deploy with `curl` on `/assets/main-*.js` for that string, and give Matt the sha to check.
 
 - `public/_headers` sets `Access-Control-Allow-Origin: *`. Required: OBR fetches the manifest cross-origin, and Workers send no CORS header by default.
 - `wrangler.jsonc` needs `"previews": {}` or `wrangler preview` (PR builds) fails. Previews don't apply the SPA fallback (deep links 404); production does.
@@ -142,8 +153,11 @@ Two installs in Owlbear, each added once:
 ### Workflow
 
 - Branch + PR per change; squash-merge after CI and Workers Builds both pass. Features that need in-Owlbear testing stay open until the manual pass (`TESTING.md`).
+- `TESTING.md` is the manual pass for the current feature PR: rewrite its steps (keep "Known quirk" and the Results table) rather than appending.
 - To review in Owlbear, rebuild `dev` from main plus the open PR branches and force-push it: `git checkout -B dev origin/main && git merge --no-edit <branches...> && git push -f origin dev`. `dev` is disposable; never PR from it or merge it into main.
-- Versions are dates (`YYYY-MM-DD` in package.json and manifest.json; a second release the same day is `YYYY-MM-DD.1`, then `.2`) and drive the WhatsNew modal (shows on any change, not just newer). Add matching entries to `src/releaseNotes.ts` and `RELEASE-NOTES.md`.
+- Stacked PRs: `gh pr edit N --base main` before deleting the branch it's based on (deleting a base auto-closes PRs on it). Run multi-step git loops under `bash`, not zsh (no word-splitting of `$var`).
+- While PRs are stacked and unmerged, branch new work off the top of the stack and set `--base` to that branch; `dev` is then just `origin/main` + the top branch.
+- Versions are dates (`YYYY-MM-DD` in package.json and manifest.json; a second release the same day is `YYYY-MM-DD.1`, then `.2`) and drive the WhatsNew modal (shows on any change, not just newer). Add matching entries to `src/releaseNotes.ts` and `RELEASE-NOTES.md`; while that version is unmerged, amend its entry instead of adding another version.
 
 ### Theming
 
@@ -154,7 +168,7 @@ Two independent layers:
 
 ### Icons
 
-Inline SVG only (no icon library). Right-click menu and token badge icons live in `public/img/`.
+Inline SVG only (no icon library). Right-click menu and token badge icons live in `public/img/`. The toolbar action icon reuses the white `torch-menu.svg`. The logo source is `art/icon/logo.svg`: copy it to `public/img/logo.svg` (favicon) and render `public/img/logo.png` (manifest icon) at 256×256 with headless Chrome, as for badges. No upstream Shadow Crawler artwork remains; don't reintroduce it.
 
 ### Analytics
 

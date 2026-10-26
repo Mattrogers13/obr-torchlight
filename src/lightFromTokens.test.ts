@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import OBR from "@owlbear-rodeo/sdk";
 
 import { ROOM_KEY, playerKey } from "./constants";
-import { lightFromTokens } from "./lightFromTokens";
+import { lightFromTokens, putOutOnTokens } from "./lightFromTokens";
 import { createLight, lightName } from "./lights";
 
 const room = vi.hoisted(() => ({ metadata: {} as Record<string, unknown> }));
@@ -145,3 +145,36 @@ describe("lightFromTokens (token right-click)", () => {
   });
 });
 
+
+describe("putOutOnTokens (right-click Put out light)", () => {
+  const lit = (id: string, tokenId: string) => ({ ...createLight(id, `${id}'s torch`, "time", 60, T0, { tokenId }) });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    room.metadata = {
+      [ROOM_KEY]: { lights: [lit("gm", "tok-Goblin"), lit("gm2", "tok-Bo")] },
+      [playerKey("p1")]: { ownerName: "Kira", lights: [lit("kira", "tok-Kira")] },
+      [playerKey("p2")]: { ownerName: "Bo", lights: [lit("bo", "tok-Kira")] },
+    };
+  });
+
+  it("GM puts out every light on the token, players' included, in one write", async () => {
+    expect(await putOutOnTokens(gm, ["tok-Kira", "tok-Goblin"], T0 + 1000)).toEqual([
+      "gm's torch", "kira's torch", "bo's torch",
+    ]);
+    expect(OBR.room.setMetadata).toHaveBeenCalledTimes(1);
+    expect(shared().lights.map((l) => l.setAside)).toEqual(["put-out", null]);
+    expect(shared().writer).toMatch(/^menu-/);
+    expect(mine().lights[0]).toMatchObject({ setAside: "put-out" });
+  });
+
+  it("a player only puts out their own", async () => {
+    expect(await putOutOnTokens(kira, ["tok-Kira", "tok-Goblin"], T0 + 1000)).toEqual(["kira's torch"]);
+    expect(Object.keys(vi.mocked(OBR.room.setMetadata).mock.calls[0][0])).toEqual([playerKey("p1")]);
+  });
+
+  it("writes nothing when nothing is burning there", async () => {
+    expect(await putOutOnTokens(gm, ["tok-Nobody"], T0 + 1000)).toEqual([]);
+    expect(OBR.room.setMetadata).not.toHaveBeenCalled();
+  });
+});

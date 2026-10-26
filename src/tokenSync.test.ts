@@ -116,6 +116,16 @@ describe("planSync", () => {
     expect(plan.deleteBadges).toEqual(["badge"]);
   });
 
+  it("a token that had no light gets the unlit light when its light stops", () => {
+    const unlit = dfLight(90);
+    const restore = (saved: unknown) =>
+      planSync(new Map(), [{ id: "a", dfLight: dfLight(900), marker: { saved, source: "torch" } }], [], px, () => "", unlit)
+        .restore;
+    expect(restore(null)).toEqual([{ tokenId: "a", saved: unlit }]);
+    // A light of its own wins over the default.
+    expect(restore(threeFoot)).toEqual([{ tokenId: "a", saved: threeFoot }]);
+  });
+
   it("does nothing when the token already matches", () => {
     const plan = planSync(
       new Map([["a", "torch"]]),
@@ -166,7 +176,7 @@ describe("planSync", () => {
   });
 
   it("replaces a badge whose image is outdated (the old SVG badges)", () => {
-    const imageFor = (source: string) => `https://x/img/badge-${source}.png`;
+    const imageFor = (source: string) => `https://x/img/badge-${source}.webp`;
     const plan = planSync(
       new Map([["a", "torch"]]),
       [{ id: "a", dfLight: dfLight(900), marker: { saved: null, source: "torch" } }],
@@ -188,20 +198,20 @@ describe("nextSyncDelay", () => {
   const linked = (endsAt: number | null) => ({ ...createLight("a", "T", "time", 60, T0, { tokenId: "tok" }), endsAt });
 
   it("wakes just after the next linked light runs out", () => {
-    expect(nextSyncDelay([linked(T0 + 5000)], T0, false)).toBe(5250);
-    expect(nextSyncDelay([linked(null)], T0, false)).toBeNull();
+    expect(nextSyncDelay([linked(T0 + 5000)], T0, null)).toBe(5250);
+    expect(nextSyncDelay([linked(null)], T0, null)).toBeNull();
   });
 
   it("caps a forged far-future end time instead of overflowing setTimeout", () => {
-    const delay = nextSyncDelay([linked(1e15)], T0, false)!;
+    const delay = nextSyncDelay([linked(1e15)], T0, null)!;
     expect(delay).toBeLessThanOrEqual(2 ** 31 - 1);
     expect(delay).toBeGreaterThan(60_000);
   });
 
   it("retries soon after a failure, even with nothing scheduled", () => {
-    expect(nextSyncDelay([linked(T0 + 3_600_000)], T0, true)).toBe(SYNC_RETRY_MS);
+    expect(nextSyncDelay([linked(T0 + 3_600_000)], T0, SYNC_RETRY_MS)).toBe(SYNC_RETRY_MS);
     // The first pass failing (nothing known yet) must still retry.
-    expect(nextSyncDelay([], T0, true)).toBe(SYNC_RETRY_MS);
+    expect(nextSyncDelay([], T0, SYNC_RETRY_MS)).toBe(SYNC_RETRY_MS);
   });
 });
 

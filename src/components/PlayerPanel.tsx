@@ -10,6 +10,7 @@ import {
   RoomState,
   cleanName,
   createLight,
+  currentLight,
   isActive,
   lightName,
   replacePlayerLight,
@@ -52,7 +53,8 @@ const PlayerPanel: React.FC<{
     updatePlayer(myId, (d) => ({ ...d, lights: d.lights.filter((l) => l.id !== light.id) }));
   };
 
-  const burning = mine.find((l) => isActive(l, now));
+  // The light lighting a new one would pause (what replacePlayerLight picks).
+  const burning = currentLight(mine, now);
   const others = entries.filter((e) => e.ownerId !== myId).map((e) => e.light);
   const shared = state.showToPlayers ? [...mine, ...others] : mine;
   const visible = activeOnly ? shared.filter((l) => isActive(l, now)) : shared;

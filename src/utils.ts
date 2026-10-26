@@ -18,14 +18,21 @@ export const notify = (
   );
 };
 
-// player.onChange fires on every selection change; call back only when the
-// role actually changes.
-export const onRoleChange = (callback: () => void) => {
+// player.onChange fires on every selection change; call back (with the new
+// role) only when the role actually changes. Starts from the current role, so
+// the first token click doesn't count as a change.
+export const onRoleChange = (callback: (role: "GM" | "PLAYER") => void) => {
   let role: string | undefined;
+  OBR.player
+    .getRole()
+    .then((r) => {
+      if (role === undefined) role = r;
+    })
+    .catch(() => {});
   return OBR.player.onChange((player) => {
     if (player.role === role) return;
     role = player.role;
-    callback();
+    callback(player.role);
   });
 };
 
