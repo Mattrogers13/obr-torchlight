@@ -48,6 +48,10 @@ export interface Light {
 export interface Stamp {
   writer: string;
   seq: number;
+  // Compatibility only, not used for staleness: builds before 2026-10-15
+  // ignore a doc whose rev is below the one they hold, so every write still
+  // bumps it. TODO(2026-11-15): remove once those builds are gone.
+  rev: number;
 }
 
 export interface RoomState extends Stamp {
@@ -87,6 +91,7 @@ export const DEFAULT_MINUTES = 60;
 export const DEFAULT_TURNS = 10;
 
 export const emptyRoomState = (): RoomState => ({
+  rev: 0,
   writer: "",
   seq: 0,
   lights: [],
@@ -96,7 +101,7 @@ export const emptyRoomState = (): RoomState => ({
   burnedOut: [],
 });
 
-export const emptyPlayerDoc = (): PlayerDoc => ({ writer: "", seq: 0, ownerName: "", lights: [] });
+export const emptyPlayerDoc = (): PlayerDoc => ({ rev: 0, writer: "", seq: 0, ownerName: "", lights: [] });
 
 const clampInt = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, Math.round(value)));
@@ -190,11 +195,11 @@ export const setAsideLight = (light: Light, now: number, why: Exclude<SetAside, 
   setAside: why,
 });
 
-// A player lights something new: their current light is paused and kept
-// alongside the new one; anything older is dropped.
 // The light a new one replaces: the newest active one.
 export const currentLight = (lights: Light[], now: number) => [...lights].reverse().find((l) => isActive(l, now));
 
+// A player lights something new: their current light is paused and kept
+// alongside the new one; anything older is dropped.
 export const replacePlayerLight = (lights: Light[], fresh: Light, now: number): Light[] => {
   const current = currentLight(lights, now);
   const keep = current ? setAsideLight(current, now) : lights[lights.length - 1];
@@ -351,18 +356,21 @@ const parseLights = (raw: unknown, max: number): Light[] => {
 };
 
 const parseStamp = (raw: Record<string, unknown>, into: Stamp) => {
+  if (finite(raw.rev) && raw.rev >= 0) into.rev = Math.floor(raw.rev);
   if (typeof raw.writer === "string" && raw.writer.length <= 40) into.writer = raw.writer;
   if (finite(raw.seq) && raw.seq >= 0) into.seq = Math.floor(raw.seq);
 };
 
 // The only way a doc should be prepared for writing: put this writer's stamp
-// on it. A copied doc that isn't restamped carries another client's stamp,
-// and that client would discard the write as its own echo. (Docs once had a
-// `rev` counter too; old ones still in rooms are ignored.)
-export const restamp = <D extends Stamp>(doc: D, stamp: Stamp): D => {
-  const { rev: _unused, ...rest } = doc as D & { rev?: unknown };
-  return { ...(rest as D), writer: stamp.writer, seq: stamp.seq };
-};
+// on it (and bump rev, see Stamp). A copied doc that isn't restamped carries
+// another client's stamp, and that client would discard the write as its own
+// echo.
+export const restamp = <D extends Stamp>(doc: D, stamp: Pick<Stamp, "writer" | "seq">): D => ({
+  ...doc,
+  rev: doc.rev + 1,
+  writer: stamp.writer,
+  seq: stamp.seq,
+});
 
 // Torchlight's slice of room metadata, to tell our changes from other
 // extensions' (room metadata is shared by every extension in the room).

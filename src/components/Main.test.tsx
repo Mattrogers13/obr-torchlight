@@ -898,13 +898,75 @@ describe("Main (Torchlight)", () => {
   });
 
   describe("ninth review fixes", () => {
-    it("a normal save doesn't re-read the room", async () => {
+    it("a save costs one room re-read, no more", async () => {
       room.metadata = { [ROOM_KEY]: { lights: [turnTorch(0)] } };
       render(<Main player={false} />);
       fireEvent.click(await screen.findByTitle("Burn a turn"));
       await waitFor(() => expect(stored().lights[0]).toMatchObject({ turnsUsed: 1 }));
       await act(async () => {});
-      expect(OBR.room.getMetadata).toHaveBeenCalledTimes(1); // the initial load only
+      expect(OBR.room.getMetadata).toHaveBeenCalledTimes(2); // initial load + one re-read
+    });
+  });
+
+  describe("eleventh review fixes", () => {
+    it("writes still bump rev, so panels on the previous build accept them", async () => {
+      room.metadata = { [ROOM_KEY]: { rev: 41, lights: [turnTorch(0)] } };
+      render(<Main player={false} />);
+      fireEvent.click(await screen.findByTitle("Burn a turn"));
+      await waitFor(() => expect(stored()).toMatchObject({ rev: 42 }));
+    });
+
+    it("a failed first load keeps the panel locked instead of letting an edit wipe the room", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        room.metadata = { [ROOM_KEY]: { lights: [turnTorch(4)] } };
+        vi.mocked(OBR.room.getMetadata).mockRejectedValueOnce(new Error("offline"));
+        render(<Main player={false} />);
+        expect(await screen.findByText("Loading…")).toBeInTheDocument();
+        expect(screen.queryByText("Light")).not.toBeInTheDocument(); // no add form to write with
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1500); // retry
+        });
+        expect(await screen.findByText("4 / 10")).toBeInTheDocument();
+        expect(OBR.room.setMetadata).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  describe("twelfth review fixes", () => {
+    it("a panel remounted mid-write shows the room's lights, never an empty state it could save", async () => {
+      room.metadata = { [ROOM_KEY]: { lights: [turnTorch(3)], showToPlayers: true } };
+      const first = render(<Main player={false} />);
+      const plus = await screen.findByTitle("Burn a turn");
+      room.deferWrites = true;
+      fireEvent.click(plus); // shared-state write in flight
+      first.unmount(); // tab switch before it lands
+      render(<Main player={false} />);
+      expect(await screen.findByText("3 / 10")).toBeInTheDocument();
+      expect(screen.queryByText("No lights burning.")).not.toBeInTheDocument();
+      while (room.writeQueue.length) await flushWrite();
+    });
+
+    it("failing room reads show one error, not one per click", async () => {
+      room.metadata = { [ROOM_KEY]: { lights: [turnTorch(0)] } };
+      render(<Main player={false} />);
+      const plus = await screen.findByTitle("Burn a turn");
+      vi.mocked(OBR.room.getMetadata).mockRejectedValue(new Error("offline"));
+      try {
+        for (let i = 0; i < 3; i++) {
+          fireEvent.click(plus);
+          await act(async () => {});
+        }
+        await act(async () => {});
+        const loadErrors = vi
+          .mocked(OBR.notification.show)
+          .mock.calls.filter(([msg]) => String(msg).startsWith("Torchlight couldn't load room state"));
+        expect(loadErrors).toHaveLength(1);
+      } finally {
+        vi.mocked(OBR.room.getMetadata).mockImplementation(async () => room.metadata);
+      }
     });
   });
 });

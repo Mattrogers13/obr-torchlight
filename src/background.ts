@@ -3,7 +3,7 @@ import OBR, { ContextMenuItem } from "@owlbear-rodeo/sdk";
 import { ID, ROOM_KEY } from "./constants";
 import { parsePlayersCanAdd } from "./lights";
 import { startTokenSync } from "./tokenSync";
-import { errorMessage } from "./utils";
+import { errorMessage, onRoleChange } from "./utils";
 
 // Runs whenever Torchlight is enabled in the room, panel open or not.
 // Adds one "Torchlight" entry to the right-click menu of character tokens;
@@ -39,6 +39,7 @@ OBR.onReady(async () => {
   // What Owlbear currently has. Only updated after create/remove succeeds,
   // so a failed call is retried on the next change instead of sticking.
   let shown: boolean | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
   const sync = async () => {
     const gm = (await OBR.player.getRole()) === "GM";
@@ -48,13 +49,13 @@ OBR.onReady(async () => {
     if (allowed) await OBR.contextMenu.create(MENU);
     else await OBR.contextMenu.remove(MENU_ID);
     shown = allowed;
+    clearTimeout(retryTimer); // a pending retry is no longer needed
   };
 
   // One sync at a time; changes that arrive meanwhile collapse into one rerun
   // that reads fresh state, so out-of-order results can't win.
   let running = false;
   let pending = false;
-  let retryTimer: ReturnType<typeof setTimeout> | undefined;
   const requestSync = async () => {
     if (running) {
       pending = true;
@@ -90,12 +91,7 @@ OBR.onReady(async () => {
     lastAllowFlag = flag;
     requestSync();
   });
-  let lastRole: string | null = null;
-  OBR.player.onChange((player) => {
-    if (player.role === lastRole) return;
-    lastRole = player.role;
-    requestSync();
-  });
+  onRoleChange(() => requestSync());
   // GM only (checked inside): token lights and badges follow the timers.
   startTokenSync();
 });
