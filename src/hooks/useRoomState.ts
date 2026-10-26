@@ -5,57 +5,57 @@ import { ROOM_KEY, playerKey } from "../constants";
 import {
   Light,
   PlayerDoc,
-  Stamp,
   RoomState,
+  Stamp,
   emptyPlayerDoc,
   emptyRoomState,
   parsePlayerDocs,
   parseRoomState,
+  restamp,
   torchlightSignature,
 } from "../lights";
 import { errorMessage, notify } from "../utils";
 
 export type PlayerDocs = Record<string, PlayerDoc>;
 
-// This client as a writer. Module-level, so it lasts for the page load and
-// survives the panel remounting (tab switches, scene changes); per-mount ids
-// made late echoes of the previous mount's writes look like someone else's.
+// How the panel stays in step with the room (details: docs/state-sync.md):
+//
+// 1. While one of our writes to a doc is in flight, room events for that doc
+//    are ignored: ours lands after anything they carry and replaces it.
+// 2. A late echo of our own older write is ignored.
+// 3. When a write settles, saved or failed, read the room once and take it as
+//    truth for every doc with nothing in flight. That reverts a failed write
+//    and picks up anything rule 1 ignored.
+//
+// Nothing here trusts a seq read from the room beyond comparing it with what
+// we sent. State is module-level so it survives the panel remounting (tab
+// switches, scene changes); only one useRoomState is ever mounted.
 const WRITER = crypto.randomUUID().slice(0, 8);
 let lastSeq = 0;
-const ourLatest = new Map<string, number>(); // doc key -> seq of our latest write
-const ourSeen = new Map<string, number>(); // doc key -> highest seq of ours known to have landed (or failed)
+const lastSent = new Map<string, number>(); // doc key -> seq of our latest write
+const pending = new Map<string, number>(); // doc key -> writes of ours in flight
 
-const stamp = (key: string) => {
+const inFlight = (key: string) => (pending.get(key) ?? 0) > 0;
+
+const send = (key: string) => {
   lastSeq += 1;
-  ourLatest.set(key, lastSeq);
+  lastSent.set(key, lastSeq);
+  pending.set(key, (pending.get(key) ?? 0) + 1);
   return { writer: WRITER, seq: lastSeq };
 };
-
-const markSeen = (key: string, seq: number) => ourSeen.set(key, Math.max(ourSeen.get(key) ?? 0, seq));
-
-// Docs whose latest write of ours failed: the room's copy must be taken over
-// what we show, even if the room's copy is an older write of ours.
-const revertTo = new Set<string>();
-
-// One of our writes to this doc hasn't landed (or failed) yet.
-const inFlight = (key: string) => (ourSeen.get(key) ?? 0) < (ourLatest.get(key) ?? 0);
-
-// Whether to take an incoming doc over the one we hold. Room events arrive in
-// the order the room applied them. Our own older echoes are ignored. Someone
-// else's write is taken unless one of ours to the same doc is still in
-// flight: ours lands after it and replaces it, so taking it would only build
-// our next change on a state the room is about to drop.
-const takeIncoming = (key: string, doc: { writer: string; seq: number }) => {
-  if (revertTo.delete(key)) {
-    if (doc.writer === WRITER) markSeen(key, doc.seq);
-    return true;
-  }
-  if (doc.writer === WRITER) {
-    markSeen(key, doc.seq);
-    return doc.seq >= (ourLatest.get(key) ?? 0);
-  }
-  return !inFlight(key);
+const settle = (key: string) => {
+  const n = (pending.get(key) ?? 1) - 1;
+  if (n > 0) pending.set(key, n);
+  else pending.delete(key);
 };
+
+// Rules 1 and 2, for one doc in a live event.
+const takeEvent = (key: string, doc: Stamp) =>
+  !inFlight(key) && !(doc.writer === WRITER && doc.seq < (lastSent.get(key) ?? 0));
+
+// The mounted panel's re-read (rule 3). A save from a panel that has since
+// unmounted (tab switch mid-write) re-reads into the one that's open now.
+let mountedResync: (() => void) | null = null;
 
 // Who this client is. GMs may write the shared state and every player's doc;
 // a player may write only their own doc.
@@ -72,26 +72,29 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
   const [loaded, setLoaded] = useState(false);
   const latest = useRef<RoomState>(state);
   const latestDocs = useRef<PlayerDocs>(playerDocs);
-
-  // Room metadata is shared with every extension; skip changes that didn't
-  // touch Torchlight's keys.
+  // Last Torchlight slice applied (other extensions' writes are skipped), and
+  // how many Torchlight events have been applied, so a room read that an
+  // event overtook can be told apart.
   const lastSignature = useRef<string | null>(null);
+  const applied = useRef(0);
+  // Holding back the room's copy only makes sense if we hold one. Until this
+  // mount has taken the shared state once (say it remounted mid-write), it
+  // takes the room's; the panel isn't loaded until it has.
+  const haveState = useRef(false);
 
-  // `force` (initial load, resync after a failed save) only bypasses the
-  // unchanged-signature skip; the in-flight rules still apply, except that
-  // the very first load of this mount takes the room as it is.
-  const hasLoaded = useRef(false);
-  const apply = useCallback((metadata: Metadata, force = false) => {
+  const apply = useCallback((metadata: Metadata, from: "event" | "snapshot") => {
     const signature = torchlightSignature(metadata);
-    if (!force && signature === lastSignature.current) return;
+    if (from === "event") {
+      if (signature === lastSignature.current) return;
+      applied.current += 1;
+    }
     lastSignature.current = signature;
-    const first = !hasLoaded.current;
-    hasLoaded.current = true;
-    // Always run takeIncoming, even with nothing held: it records our echoes.
-    const take = (key: string, doc: Stamp) => takeIncoming(key, doc) || first;
+    // A snapshot is the room's truth; only in-flight docs keep our copy.
+    const take = (key: string, doc: Stamp) => (from === "snapshot" ? !inFlight(key) : takeEvent(key, doc));
 
     const next = parseRoomState(metadata[ROOM_KEY]);
-    if (take(ROOM_KEY, next)) {
+    if (take(ROOM_KEY, next) || !haveState.current) {
+      haveState.current = true;
       latest.current = next;
       setState(next);
     }
@@ -99,7 +102,7 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
     const docs: PlayerDocs = {};
     for (const [id, doc] of Object.entries(incoming)) {
       const held = latestDocs.current[id];
-      docs[id] = take(playerKey(id), doc) || !held ? doc : held;
+      docs[id] = !held || take(playerKey(id), doc) ? doc : held;
     }
     // A doc we just created may not be in the room yet; keep it until it is.
     for (const [id, held] of Object.entries(latestDocs.current)) {
@@ -109,60 +112,98 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
     setPlayerDocs(docs);
   }, []);
 
-  // Counts room change events. A getMetadata snapshot taken before an event
-  // that arrives while it's in flight is older than that event, so it's
-  // dropped rather than rolling the event back.
-  const events = useRef(0);
-
-  const resync = useCallback(() => {
-    const asked = events.current;
-    return OBR.room
-      .getMetadata()
-      .then((metadata) => {
-        if (events.current === asked) apply(metadata, true);
-      })
-      .catch((err) => notify(`Torchlight couldn't load room state: ${errorMessage(err)}`, "ERROR"));
+  // Rule 3: read the room and take it. A read that a Torchlight event
+  // overtook is older than that event, so read again. Resolves true once a
+  // read was applied.
+  const mounted = useRef(true);
+  const readOnce = useCallback(async (): Promise<boolean> => {
+    for (let attempt = 0; attempt < 5 && mounted.current; attempt++) {
+      const asked = applied.current;
+      const metadata = await OBR.room.getMetadata();
+      if (!mounted.current) return false;
+      if (applied.current === asked) {
+        apply(metadata, "snapshot");
+        return true;
+      }
+    }
+    return false;
   }, [apply]);
 
-  useEffect(() => {
-    resync().finally(() => setLoaded(true));
-    return OBR.room.onMetadataChange((metadata) => {
-      events.current += 1;
-      apply(metadata);
-    });
-  }, [apply, resync]);
+  // One re-read loop at a time. Requests while it runs or waits just mark it
+  // to read again once more; failures back off up to 30 s and the user is
+  // told once. Until the first read lands the panel stays on "Loading…":
+  // unlocking with an empty state would let the next edit wipe the room.
+  const loop = useRef({ running: false, again: false, wait: 1000, told: false });
+  const retry = useRef<ReturnType<typeof setTimeout>>();
+  const requestResync = useCallback(() => {
+    const l = loop.current;
+    if (l.running) {
+      l.again = true;
+      return;
+    }
+    l.running = true;
+    l.again = false;
+    readOnce()
+      .then((done) => {
+        if (done) {
+          l.wait = 1000;
+          l.told = false;
+          if (haveState.current) setLoaded(true);
+        }
+        return done;
+      })
+      .catch((err) => {
+        if (!l.told) notify(`Torchlight couldn't load room state: ${errorMessage(err)}`, "ERROR");
+        l.told = true;
+        l.wait = Math.min(l.wait * 2, 30_000);
+        return false;
+      })
+      .then((done) => {
+        l.running = false;
+        if (!mounted.current) return;
+        if (!done) {
+          clearTimeout(retry.current);
+          retry.current = setTimeout(requestResync, l.wait);
+        } else if (l.again) {
+          requestResync();
+        }
+      });
+  }, [readOnce]);
 
-  // Resolves true once the write landed, false if it failed (in which case
-  // the user is told and local state falls back to what the room holds).
+  useEffect(() => {
+    mounted.current = true;
+    const mine = () => requestResync();
+    mountedResync = mine;
+    requestResync();
+    const off = OBR.room.onMetadataChange((metadata) => apply(metadata, "event"));
+    return () => {
+      mounted.current = false;
+      clearTimeout(retry.current);
+      if (mountedResync === mine) mountedResync = null;
+      off();
+    };
+  }, [apply, requestResync]);
+
+  // Resolves true once the write landed, false if it failed (the user is
+  // told). Either way it settles and the room is re-read (rule 3).
   const save = useCallback(
-    (update: Metadata): Promise<boolean> => {
-      // Once Owlbear settles the write (either way), it's no longer in flight,
-      // even if its echo is never seen on its own (e.g. merged with a later
-      // change). Only this write's seq is cleared, not newer ones.
-      const settle = (failed: boolean) =>
-        Object.entries(update).forEach(([key, doc]) => {
-          const seq = (doc as Stamp).seq ?? 0;
-          markSeen(key, seq);
-          // Our latest change to this doc didn't save: show the room's copy
-          // again (a newer write still in flight would restore it anyway).
-          if (failed && (ourLatest.get(key) ?? 0) === seq) revertTo.add(key);
-        });
-      return OBR.room.setMetadata(update).then(
-        () => {
-          settle(false);
-          return true;
-        },
-        (err) => {
-          settle(true);
-          // Room metadata is capped at 16kB shared by all extensions, so a
-          // write can fail. Say so and fall back to what the room holds.
-          notify(`Torchlight couldn't save: ${errorMessage(err)}`, "ERROR");
-          resync();
-          return false;
-        },
-      );
-    },
-    [resync],
+    (update: Metadata): Promise<boolean> =>
+      OBR.room
+        .setMetadata(update)
+        .then(
+          () => true,
+          (err) => {
+            // Room metadata is capped at 16kB shared by all extensions.
+            notify(`Torchlight couldn't save: ${errorMessage(err)}`, "ERROR");
+            return false;
+          },
+        )
+        .then((saved) => {
+          Object.keys(update).forEach(settle);
+          mountedResync?.();
+          return saved;
+        }),
+    [],
   );
 
   // Changes that return the same object are no-ops and write nothing.
@@ -171,7 +212,7 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
       if (!gm) return Promise.resolve(false);
       const changed = change(latest.current);
       if (changed === latest.current) return Promise.resolve(true);
-      const next = { ...changed, rev: latest.current.rev + 1, ...stamp(ROOM_KEY) };
+      const next = restamp(changed, send(ROOM_KEY));
       latest.current = next;
       setState(next);
       return save({ [ROOM_KEY]: next });
@@ -185,7 +226,7 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
       const current = latestDocs.current[id] ?? emptyPlayerDoc();
       const changed = change(current);
       if (changed === current) return Promise.resolve(true);
-      const next = { ...changed, rev: current.rev + 1, ...stamp(playerKey(id)) };
+      const next = restamp(changed, send(playerKey(id)));
       latestDocs.current = { ...latestDocs.current, [id]: next };
       setPlayerDocs(latestDocs.current);
       return save({ [playerKey(id)]: next });
@@ -205,7 +246,7 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
           if (!gm) continue;
           const lights = change(latest.current.lights);
           if (lights === latest.current.lights) continue;
-          const next = { ...latest.current, lights, rev: latest.current.rev + 1, ...stamp(ROOM_KEY) };
+          const next = restamp({ ...latest.current, lights }, send(ROOM_KEY));
           latest.current = next;
           write[ROOM_KEY] = next;
         } else {
@@ -213,7 +254,7 @@ export const useRoomState = ({ gm, playerId }: Writer) => {
           const current = latestDocs.current[owner] ?? emptyPlayerDoc();
           const lights = change(current.lights);
           if (lights === current.lights) continue;
-          const next = { ...current, lights, rev: current.rev + 1, ...stamp(playerKey(owner)) };
+          const next = restamp({ ...current, lights }, send(playerKey(owner)));
           latestDocs.current = { ...latestDocs.current, [owner]: next };
           write[playerKey(owner)] = next;
         }

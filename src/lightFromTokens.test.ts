@@ -23,9 +23,9 @@ const tok = (name: string) => ({ id: `tok-${name}`, name });
 const gm = { gm: true, playerId: "gm1", playerName: "Matt" };
 const kira = { gm: false, playerId: "p1", playerName: "Kira" };
 const shared = () =>
-  room.metadata[ROOM_KEY] as { rev: number; lights: { name: string; endsAt: number | null; setAside: string | null; tokenId: string }[] };
+  room.metadata[ROOM_KEY] as { writer: string; lights: { name: string; endsAt: number | null; setAside: string | null; tokenId: string }[] };
 const mine = () =>
-  room.metadata[playerKey("p1")] as { rev: number; ownerName: string; lights: { name: string; setAside: string | null }[] };
+  room.metadata[playerKey("p1")] as { writer: string; ownerName: string; lights: { name: string; setAside: string | null }[] };
 
 describe("lightFromTokens (token right-click)", () => {
   beforeEach(() => {
@@ -45,7 +45,7 @@ describe("lightFromTokens (token right-click)", () => {
   it("GM lights a burning 60-minute torch in the shared state", async () => {
     room.metadata = { [ROOM_KEY]: { rev: 4, showToPlayers: true, lights: [] } };
     expect(await lightFromTokens(gm, [tok("Goblin")], T0)).toBe("Lit Goblin's torch (60 min).");
-    expect(shared().rev).toBe(5);
+    expect(shared().writer).toMatch(/^menu-/);
     expect(shared().lights[0]).toMatchObject({ name: "Goblin's torch", endsAt: T0 + 3600_000 });
     expect(shared()).toMatchObject({ showToPlayers: true });
   });
@@ -63,7 +63,7 @@ describe("lightFromTokens (token right-click)", () => {
   it("player lights into their own doc only", async () => {
     room.metadata = { [ROOM_KEY]: { rev: 2, playersCanAdd: true } };
     await lightFromTokens(kira, [tok("Kira")], T0);
-    expect(mine()).toMatchObject({ rev: 1, ownerName: "Kira", lights: [{ name: "Kira's torch" }] });
+    expect(mine()).toMatchObject({ ownerName: "Kira", lights: [{ name: "Kira's torch" }] });
     expect(room.metadata[ROOM_KEY]).toEqual({ rev: 2, playersCanAdd: true });
   });
 
@@ -114,7 +114,7 @@ describe("lightFromTokens (token right-click)", () => {
       "Lit Kira's torch (60 min). Paused Kira's torch.",
     );
     expect(mine().lights[0]).toMatchObject({ setAside: "swap" });
-    expect(mine().rev).toBe(2);
+    expect(mine().writer).toMatch(/^menu-/);
   });
 
   it("lights a lantern or casts Light from the matching menu item", async () => {

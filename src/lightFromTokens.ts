@@ -8,6 +8,7 @@ import {
   SOURCES,
   cleanName,
   createLight,
+  currentLight,
   isActive,
   lightName,
   parsePlayerDoc,
@@ -15,11 +16,12 @@ import {
   parseRoomState,
   replacePlayerLight,
   replaceTokenLight,
+  restamp,
   setAsideLight,
 } from "./lights";
 
-// This writer's own stamp. Copying a doc keeps the previous writer's stamp,
-// which would make that client discard this write as a stale echo of its own.
+// This writer's own stamp (see restamp: a copied doc must never keep the
+// previous writer's stamp).
 const menuStamp = () => ({ writer: `menu-${crypto.randomUUID().slice(0, 8)}`, seq: 1 });
 
 export interface Lighter {
@@ -66,8 +68,8 @@ export const lightFromTokens = async (
       const light = fresh(token);
       const next = replaceTokenLight(lights, light, now);
       if (next.length > LIMITS.maxLights) continue;
-      // The light replaceTokenLight sets aside (the newest active one).
-      const current = [...lights].reverse().find((l) => l.tokenId === token.id && isActive(l, now));
+      // The light replaceTokenLight sets aside.
+      const current = currentLight(lights.filter((l) => l.tokenId === token.id), now);
       if (current) paused.push(current.name);
       lights = next;
       lit.push(light);
@@ -77,17 +79,15 @@ export const lightFromTokens = async (
     // A player may already have a light burning on one of the tokens we
     // actually lit (not ones skipped at the limit, which keep their light).
     const tokenIds = new Set(lit.map((l) => l.tokenId!));
-    const update: Metadata = { [ROOM_KEY]: { ...state, lights, rev: state.rev + 1, ...menuStamp() } };
+    const update: Metadata = { [ROOM_KEY]: restamp({ ...state, lights }, menuStamp()) };
     for (const [ownerId, doc] of Object.entries(parsePlayerDocs(metadata))) {
       const hit = doc.lights.filter((l) => l.tokenId && tokenIds.has(l.tokenId) && isActive(l, now));
       if (hit.length === 0) continue;
       hit.forEach((l) => paused.push(l.name));
-      update[playerKey(ownerId)] = {
-        ...doc,
-        lights: doc.lights.map((l) => (hit.includes(l) ? setAsideLight(l, now) : l)),
-        rev: doc.rev + 1,
-        ...menuStamp(),
-      };
+      update[playerKey(ownerId)] = restamp(
+        { ...doc, lights: doc.lights.map((l) => (hit.includes(l) ? setAsideLight(l, now) : l)) },
+        menuStamp(),
+      );
     }
     await OBR.room.setMetadata(update);
     const skipped = tokens.length - lit.length;
@@ -100,17 +100,14 @@ export const lightFromTokens = async (
   if (tokens.length === 0) return "No token selected.";
   const key = playerKey(who.playerId);
   const doc = parsePlayerDoc(metadata[key]);
-  // The same light replacePlayerLight will set aside (the newest active one).
-  const current = [...doc.lights].reverse().find((l) => isActive(l, now));
+  // The light replacePlayerLight will set aside.
+  const current = currentLight(doc.lights, now);
   const light = fresh(tokens[0]);
   await OBR.room.setMetadata({
-    [key]: {
-      ...doc,
-      ownerName: cleanName(who.playerName, "Player"),
-      lights: replacePlayerLight(doc.lights, light, now),
-      rev: doc.rev + 1,
-      ...menuStamp(),
-    },
+    [key]: restamp(
+      { ...doc, ownerName: cleanName(who.playerName, "Player"), lights: replacePlayerLight(doc.lights, light, now) },
+      menuStamp(),
+    ),
   });
   return describe([light], current ? [current.name] : []);
 };

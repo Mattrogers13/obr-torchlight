@@ -30,20 +30,23 @@ export default function SPA() {
   // App only renders us once Owlbear is ready, and remounts us on every
   // scene change, so every listener must be removed on unmount.
   useEffect(() => {
+    let alive = true;
+    // A theme from theme.onChange is newer than this lookup's answer.
+    let gotTheme = false;
     OBR.theme
       .getTheme()
-      .then((theme) => setTheme(theme.mode.toLowerCase()))
-      .catch(() => {}); // keep the default theme
+      .then((theme) => alive && !gotTheme && setTheme(theme.mode.toLowerCase()))
+      .catch((err) => console.warn(`Torchlight couldn't get the Owlbear theme: ${errorMessage(err)}`));
     // Without a role nothing renders, so a failed lookup retries (backing off
     // to 30 s), but only while we're still mounted.
-    let alive = true;
     let gotRole = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let wait = 2000;
     const loadRole = () =>
       OBR.player
         .getRole()
-        .then((r) => alive && setRole(r))
+        // A role from player.onChange is newer than this lookup's answer.
+        .then((r) => alive && !gotRole && setRole(r))
         .catch((err) => {
           // player.onChange may have delivered the role meanwhile.
           if (!alive || gotRole) return;
@@ -52,7 +55,10 @@ export default function SPA() {
           wait = Math.min(wait * 2, 30_000);
         });
     loadRole();
-    const offTheme = OBR.theme.onChange((theme) => setTheme(theme.mode.toLowerCase()));
+    const offTheme = OBR.theme.onChange((theme) => {
+      gotTheme = true;
+      setTheme(theme.mode.toLowerCase());
+    });
     const offPlayer = OBR.player.onChange((player: Player) => {
       gotRole = true;
       setRole(player.role);
