@@ -12,6 +12,8 @@ import { errorMessage } from "./utils";
 // the timers (tokenSync.ts).
 
 const MENU_ID = `${ID}/light-menu`;
+// How soon to retry after Owlbear fails to add or remove the menu.
+const MENU_RETRY_MS = 5000;
 // Height of the embedded submenu: 3 rows of 36px plus 8px padding (menu.html).
 const MENU_HEIGHT = 116;
 
@@ -52,6 +54,7 @@ OBR.onReady(async () => {
   // that reads fresh state, so out-of-order results can't win.
   let running = false;
   let pending = false;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
   const requestSync = async () => {
     if (running) {
       pending = true;
@@ -64,6 +67,9 @@ OBR.onReady(async () => {
         await sync().catch((err) => {
           shown = null;
           console.error(`Torchlight menu sync failed: ${errorMessage(err)}`);
+          // The triggers below only fire on real changes, so retry on a timer.
+          clearTimeout(retryTimer);
+          retryTimer = setTimeout(() => requestSync(), MENU_RETRY_MS);
         });
       } while (pending);
     } finally {

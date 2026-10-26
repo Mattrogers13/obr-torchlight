@@ -106,6 +106,9 @@ export const useGmAlerts = ({
       if (!isOut(e.light, now)) {
         recording.current.delete(e.light.id);
         broadcast.current.delete(e.light.id);
+      } else if (announced(e) && recording.current.get(e.light.id) === Infinity) {
+        // Our record landed; if someone overwrites it, it's redone next time.
+        recording.current.delete(e.light.id);
       }
     }
     const burnedOut = entries.filter(
@@ -123,12 +126,10 @@ export const useGmAlerts = ({
       const burned = keys.length > 0 ? pruneBurnedOut([...s.burnedOut, ...keys], liveIds) : s.burnedOut;
       return lights === s.lights && burned === s.burnedOut ? s : { ...s, lights, burnedOut: burned };
     }).then((saved) => {
-      if (saved) {
-        // Recorded; the broadcast won't repeat either way (see `broadcast`).
-      }
-      // Saved or not, check again after a pause (never in a tight loop): a
-      // failed record is retried, and a saved one that another writer
-      // overwrote is put back.
+      // Saved: the in-flight mark stays until the record shows up in the room
+      // (cleared above), so an overwritten record is redone on the next change.
+      if (saved) return;
+      // Failed: retry after a pause, never in a tight loop.
       ids.forEach((id) => recording.current.set(id, Date.now() + BURN_OUT_RETRY_MS));
       clearTimeout(retryTimer.current);
       retryTimer.current = setTimeout(() => setRetryTick((t) => t + 1), BURN_OUT_RETRY_MS);

@@ -33,19 +33,22 @@ export default function SPA() {
       .getTheme()
       .then((theme) => setTheme(theme.mode.toLowerCase()))
       .catch(() => {}); // keep the default theme
-    // Without a role nothing renders, so a failed lookup retries.
+    // Without a role nothing renders, so a failed lookup retries, but only
+    // while we're still mounted.
+    let alive = true;
     let retry: ReturnType<typeof setTimeout> | undefined;
     const loadRole = () =>
       OBR.player
         .getRole()
-        .then(setRole)
+        .then((r) => alive && setRole(r))
         .catch(() => {
-          retry = setTimeout(loadRole, 2000);
+          if (alive) retry = setTimeout(loadRole, 2000);
         });
     loadRole();
     const offTheme = OBR.theme.onChange((theme) => setTheme(theme.mode.toLowerCase()));
     const offPlayer = OBR.player.onChange((player: Player) => setRole(player.role));
     return () => {
+      alive = false;
       clearTimeout(retry);
       offTheme();
       offPlayer();
