@@ -56,7 +56,7 @@ const DebugInfo: React.FC = () => {
         me: {snap.me.name} · {snap.me.role} · {snap.me.id}
       </div>
       <div>
-        shared: rev {state.rev} · {state.lights.length} lights · canAdd {String(state.playersCanAdd)} ·
+        shared: {state.writer || "?"}#{state.seq} · {state.lights.length} lights · canAdd {String(state.playersCanAdd)} ·
         canRemove {String(state.playersCanRemove)} · shown {String(state.showToPlayers)}
       </div>
       <div className="mt-1">player docs ({docs.length}):</div>
@@ -66,7 +66,7 @@ const DebugInfo: React.FC = () => {
         const who = id === snap.me.id ? "ME" : snap.party.has(id) ? `in room: ${snap.party.get(id)}` : "NOT IN ROOM";
         return (
           <div key={key}>
-            · {short(id)} [{who}] "{doc.ownerName}" rev {doc.rev}:{" "}
+            · {short(id)} [{who}] "{doc.ownerName}" {doc.writer || "?"}#{doc.seq}:{" "}
             {doc.lights.map((l) => `${l.name}${l.setAside ? ` (${l.setAside})` : ""}`).join(", ") || "none"}
           </div>
         );

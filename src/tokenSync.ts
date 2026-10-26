@@ -11,7 +11,7 @@ import {
   parseRoomState,
   torchlightSignature,
 } from "./lights";
-import { errorMessage } from "./utils";
+import { errorMessage, onRoleChange } from "./utils";
 
 // Keeps tokens' Dynamic Fog lights in step with Torchlight's timers: a token
 // with a burning light gets that source's light and a small badge; when the
@@ -374,12 +374,5 @@ export const startTokenSync = () => {
     run();
   });
   OBR.scene.onReadyChange((ready) => ready && run());
-  // Player changes fire on every selection; only a role change matters.
-  let role: string | undefined;
-  OBR.player.onChange((player) => {
-    if (player.role !== role) {
-      role = player.role;
-      run();
-    }
-  });
+  onRoleChange(() => run());
 };

@@ -44,15 +44,17 @@ export interface Light {
 
 // Every doc records who wrote it last (a random id per page load, or
 // "menu-…" for the right-click menu) and that writer's sequence number. See
-// takeIncoming in useRoomState for how clients use it.
+// takeEvent in useRoomState for how clients use it.
 export interface Stamp {
   writer: string;
   seq: number;
+  // Compatibility only, not used for staleness: builds before 2026-10-15
+  // ignore a doc whose rev is below the one they hold, so every write still
+  // bumps it. TODO(2026-11-15): remove once those builds are gone.
+  rev: number;
 }
 
 export interface RoomState extends Stamp {
-  // Bumped on every write; informational (staleness uses writer + seq).
-  rev: number;
   lights: Light[];
   showToPlayers: boolean;
   // GM permission toggles for player-owned lights (see PlayerDoc).
@@ -68,7 +70,6 @@ export interface RoomState extends Stamp {
 // a player lighting a torch can't clobber a GM edit (or another player's)
 // the way concurrent writes to the single shared key would.
 export interface PlayerDoc extends Stamp {
-  rev: number;
   ownerName: string;
   lights: Light[];
 }
@@ -194,10 +195,13 @@ export const setAsideLight = (light: Light, now: number, why: Exclude<SetAside, 
   setAside: why,
 });
 
+// The light a new one replaces: the newest active one.
+export const currentLight = (lights: Light[], now: number) => [...lights].reverse().find((l) => isActive(l, now));
+
 // A player lights something new: their current light is paused and kept
 // alongside the new one; anything older is dropped.
 export const replacePlayerLight = (lights: Light[], fresh: Light, now: number): Light[] => {
-  const current = [...lights].reverse().find((l) => isActive(l, now));
+  const current = currentLight(lights, now);
   const keep = current ? setAsideLight(current, now) : lights[lights.length - 1];
   return keep ? [keep, fresh] : [fresh];
 };
@@ -351,18 +355,17 @@ const parseLights = (raw: unknown, max: number): Light[] => {
   return lights;
 };
 
-const parseRev = (raw: Record<string, unknown>) =>
-  finite(raw.rev) && raw.rev >= 0 ? Math.floor(raw.rev) : 0;
-
 const parseStamp = (raw: Record<string, unknown>, into: Stamp) => {
+  if (finite(raw.rev) && raw.rev >= 0) into.rev = Math.floor(raw.rev);
   if (typeof raw.writer === "string" && raw.writer.length <= 40) into.writer = raw.writer;
   if (finite(raw.seq) && raw.seq >= 0) into.seq = Math.floor(raw.seq);
 };
 
-// The only way a doc should be prepared for writing: bump rev and put this
-// writer's stamp on it. A copied doc that isn't restamped carries another
-// client's stamp, and that client would discard the write as its own echo.
-export const restamp = <D extends Stamp & { rev: number }>(doc: D, stamp: Stamp): D => ({
+// The only way a doc should be prepared for writing: put this writer's stamp
+// on it (and bump rev, see Stamp). A copied doc that isn't restamped carries
+// another client's stamp, and that client would discard the write as its own
+// echo.
+export const restamp = <D extends Stamp>(doc: D, stamp: Pick<Stamp, "writer" | "seq">): D => ({
   ...doc,
   rev: doc.rev + 1,
   writer: stamp.writer,
@@ -388,7 +391,6 @@ export const parseRoomState = (raw: unknown): RoomState => {
   if (!isObject(raw)) return state;
 
   state.lights = parseLights(raw.lights, LIMITS.maxLights);
-  state.rev = parseRev(raw);
   parseStamp(raw, state);
   if (typeof raw.showToPlayers === "boolean") state.showToPlayers = raw.showToPlayers;
   state.playersCanAdd = parsePlayersCanAdd(raw);
@@ -404,7 +406,6 @@ export const parseRoomState = (raw: unknown): RoomState => {
 export const parsePlayerDoc = (raw: unknown): PlayerDoc => {
   const doc = emptyPlayerDoc();
   if (!isObject(raw)) return doc;
-  doc.rev = parseRev(raw);
   parseStamp(raw, doc);
   doc.lights = parseLights(raw.lights, LIMITS.maxPlayerLights);
   if (typeof raw.ownerName === "string") doc.ownerName = cleanName(raw.ownerName, "");

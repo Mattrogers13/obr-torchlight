@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { ROOM_KEY, playerKey } from "./constants";
 import {
   LIMITS,
   adjustTime,
@@ -16,6 +17,7 @@ import {
   SOURCES,
   burnKey,
   mapLights,
+  torchlightSignature,
   pruneBurnedOut,
   setAsideLight,
   remainingSec,
@@ -241,10 +243,10 @@ describe("parsePlayerDoc (untrusted metadata)", () => {
 
   it("caps player lights and cleans the owner name", () => {
     const lights = ["a", "b", "c", "d", "e"].map((id) => ({ ...valid, id }));
-    const doc = parsePlayerDoc({ rev: 2, ownerName: "  " + "x".repeat(99), lights });
+    const doc = parsePlayerDoc({ seq: 2, ownerName: "  " + "x".repeat(99), lights });
     expect(doc.lights.map((l) => l.id)).toEqual(["a", "b"]);
     expect(doc.ownerName).toHaveLength(LIMITS.maxNameLength);
-    expect(doc.rev).toBe(2);
+    expect(doc.seq).toBe(2);
   });
 
   it("ignores a non-string owner name", () => {
@@ -366,3 +368,15 @@ describe("burn-out record", () => {
   });
 });
 
+describe("torchlightSignature", () => {
+  it("ignores other extensions' metadata and key order", () => {
+    const ours = { [ROOM_KEY]: { rev: 1 }, [playerKey("p1")]: { rev: 2 } };
+    const a = torchlightSignature({ ...ours, "other.ext/x": 1 });
+    const b = torchlightSignature({ "other.ext/x": 99, [playerKey("p1")]: { rev: 2 }, [ROOM_KEY]: { rev: 1 } });
+    expect(a).toBe(b);
+  });
+
+  it("changes when our data changes", () => {
+    expect(torchlightSignature({ [ROOM_KEY]: { rev: 1 } })).not.toBe(torchlightSignature({ [ROOM_KEY]: { rev: 2 } }));
+  });
+});

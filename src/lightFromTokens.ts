@@ -8,6 +8,7 @@ import {
   SOURCES,
   cleanName,
   createLight,
+  currentLight,
   isActive,
   lightName,
   parsePlayerDoc,
@@ -67,8 +68,8 @@ export const lightFromTokens = async (
       const light = fresh(token);
       const next = replaceTokenLight(lights, light, now);
       if (next.length > LIMITS.maxLights) continue;
-      // The light replaceTokenLight sets aside (the newest active one).
-      const current = [...lights].reverse().find((l) => l.tokenId === token.id && isActive(l, now));
+      // The light replaceTokenLight sets aside.
+      const current = currentLight(lights.filter((l) => l.tokenId === token.id), now);
       if (current) paused.push(current.name);
       lights = next;
       lit.push(light);
@@ -99,8 +100,8 @@ export const lightFromTokens = async (
   if (tokens.length === 0) return "No token selected.";
   const key = playerKey(who.playerId);
   const doc = parsePlayerDoc(metadata[key]);
-  // The same light replacePlayerLight will set aside (the newest active one).
-  const current = [...doc.lights].reverse().find((l) => isActive(l, now));
+  // The light replacePlayerLight will set aside.
+  const current = currentLight(doc.lights, now);
   const light = fresh(tokens[0]);
   await OBR.room.setMetadata({
     [key]: restamp(
