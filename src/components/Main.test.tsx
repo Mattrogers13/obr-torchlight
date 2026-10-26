@@ -17,7 +17,16 @@ const room = vi.hoisted(() => ({
   // When set, change events queue up until flushed, like real network echoes.
   deferEchoes: false,
   echoQueue: [] as Record<string, unknown>[],
+  // When set, a write isn't applied until flushed; flushing applies it,
+  // emits its change event and resolves the save, like a real room in order.
+  deferWrites: false,
+  writeQueue: [] as (() => void)[],
 }));
+
+const flushWrite = () =>
+  act(async () => {
+    room.writeQueue.shift()?.();
+  });
 
 const flushEcho = () =>
   act(async () => {
@@ -31,6 +40,15 @@ vi.mock("@owlbear-rodeo/sdk", () => ({
       getMetadata: vi.fn(async () => room.metadata),
       setMetadata: vi.fn(async (update: Record<string, unknown>) => {
         if (room.failWrites) throw new Error("Metadata too large");
+        if (room.deferWrites) {
+          return new Promise<void>((resolve) =>
+            room.writeQueue.push(() => {
+              room.metadata = { ...room.metadata, ...update };
+              room.listeners.forEach((l) => l(room.metadata));
+              resolve();
+            }),
+          );
+        }
         room.metadata = { ...room.metadata, ...update };
         if (room.deferEchoes) room.echoQueue.push(room.metadata);
         else room.listeners.forEach((l) => l(room.metadata));
@@ -75,6 +93,8 @@ describe("Main (Torchlight)", () => {
     room.failWrites = false;
     room.deferEchoes = false;
     room.echoQueue = [];
+    room.deferWrites = false;
+    room.writeQueue = [];
     vi.clearAllMocks();
   });
 
@@ -760,14 +780,38 @@ describe("Main (Torchlight)", () => {
       room.metadata = { [ROOM_KEY]: { rev: 0, lights: [turnTorch(0)] } };
       render(<Main player={false} />);
       const plus = await screen.findByTitle("Burn a turn");
-      room.deferEchoes = true;
-      fireEvent.click(plus); // 1 turn
-      fireEvent.click(plus); // 2 turns, still in flight
-      await flushEcho(); // echo of the first click
-      await foreign([turnTorch(0)]); // the room applied someone else's write here
-      fireEvent.click(plus); // built on our 2 turns, not on the foreign 0
-      while (room.echoQueue.length) await flushEcho();
+      room.deferWrites = true;
+      fireEvent.click(plus); // write 1 (1 turn)
+      fireEvent.click(plus); // write 2 (2 turns)
+      await flushWrite(); // room applies write 1
+      await foreign([turnTorch(0)]); // then someone else's write
+      fireEvent.click(plus); // write 3, while write 2 is still in flight
+      while (room.writeQueue.length) await flushWrite(); // room applies 2, then 3
+      // Write 2 replaced the foreign write in the room anyway, so write 3 must
+      // build on our 2 turns, not on the foreign 0.
       await waitFor(() => expect(stored().lights[0]).toMatchObject({ turnsUsed: 3 }));
+    });
+
+    it("a player's first doc still takes the GM's later changes", async () => {
+      room.metadata = { [ROOM_KEY]: { playersCanAdd: true } };
+      render(<Main player={true} />);
+      room.deferWrites = true;
+      fireEvent.click(await screen.findByText("Light"));
+      // Another write the room applied first, without the player's new doc.
+      await act(async () => {
+        room.metadata = { ...room.metadata, [ROOM_KEY]: { rev: 5, writer: "gm-1", seq: 1, playersCanAdd: true } };
+        room.listeners.forEach((l) => l(room.metadata));
+      });
+      // The pending doc isn't dropped meanwhile.
+      expect(screen.getByText("Kira's torch")).toBeInTheDocument();
+      await flushWrite(); // the player's write lands
+      room.deferWrites = false;
+      // The GM then removes the player's light.
+      await act(async () => {
+        room.metadata = { ...room.metadata, [playerKey("me")]: { rev: 9, writer: "gm-1", seq: 2, ownerName: "Kira", lights: [] } };
+        room.listeners.forEach((l) => l(room.metadata));
+      });
+      await waitFor(() => expect(screen.queryByText("Kira's torch")).not.toBeInTheDocument());
     });
 
     it("a late echo from before the panel remounted doesn't roll it back", async () => {
@@ -784,6 +828,59 @@ describe("Main (Torchlight)", () => {
       expect(screen.getByText("2 / 10")).toBeInTheDocument();
       room.deferEchoes = false;
       while (room.echoQueue.length) await flushEcho();
+    });
+  });
+
+  describe("seventh review fixes", () => {
+    it("a failed save after our own good one puts the room's state back on screen", async () => {
+      room.metadata = { [ROOM_KEY]: { rev: 0, lights: [turnTorch(0)] } };
+      render(<Main player={false} />);
+      const plus = await screen.findByTitle("Burn a turn");
+      fireEvent.click(plus); // saved: 1 turn
+      expect(await screen.findByText("1 / 10")).toBeInTheDocument();
+      room.failWrites = true;
+      fireEvent.click(plus); // fails
+      await waitFor(() =>
+        expect(OBR.notification.show).toHaveBeenCalledWith("Torchlight couldn't save: Metadata too large", "ERROR"),
+      );
+      expect(await screen.findByText("1 / 10")).toBeInTheDocument();
+      expect(screen.queryByText("2 / 10")).not.toBeInTheDocument();
+    });
+
+    it("a burn-out is announced once it's recorded, not before", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        room.metadata = { [ROOM_KEY]: { lights: [burnedOutTorch(false)] } };
+        room.failWrites = true;
+        render(<Main player={false} />);
+        await waitFor(() =>
+          expect(OBR.notification.show).toHaveBeenCalledWith("Torchlight couldn't save: Metadata too large", "ERROR"),
+        );
+        expect(OBR.broadcast.sendMessage).not.toHaveBeenCalled();
+        room.failWrites = false;
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(BURN_OUT_RETRY_MS + 1500);
+        });
+        await waitFor(() => expect(OBR.broadcast.sendMessage).toHaveBeenCalledTimes(1));
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("a room snapshot that resolves after a newer change doesn't roll it back", async () => {
+      let resolveSnapshot: (m: Record<string, unknown>) => void = () => {};
+      const before = { [ROOM_KEY]: { rev: 0, lights: [] } };
+      vi.mocked(OBR.room.getMetadata).mockImplementationOnce(
+        () => new Promise((resolve) => (resolveSnapshot = resolve as typeof resolveSnapshot)),
+      );
+      render(<Main player={false} />);
+      // Another GM's change arrives while the initial load is still in flight.
+      await act(async () => {
+        room.metadata = { [ROOM_KEY]: { rev: 1, writer: "gm-b", seq: 1, lights: [turnTorch(0)] } };
+        room.listeners.forEach((l) => l(room.metadata));
+      });
+      await act(async () => resolveSnapshot(before)); // the older snapshot lands last
+      expect(await screen.findByText("Lantern", { selector: "li span" })).toBeInTheDocument();
     });
   });
 });

@@ -42,9 +42,9 @@ export interface Light {
   tokenId: string | null;
 }
 
-// Every doc records who wrote it last (a random id per panel) and that
-// writer's sequence number, so a client can tell a late echo of its own
-// older write (ignore) from anyone else's write (always current).
+// Every doc records who wrote it last (a random id per page load, or
+// "menu-…" for the right-click menu) and that writer's sequence number. See
+// takeIncoming in useRoomState for how clients use it.
 export interface Stamp {
   writer: string;
   seq: number;
@@ -369,6 +369,10 @@ export const torchlightSignature = (metadata: Record<string, unknown>) =>
       .map((key) => [key, metadata[key]]),
   );
 
+// Just the "players can light their own" flag, for readers that need nothing
+// else (the background page checks it on every room change).
+export const parsePlayersCanAdd = (raw: unknown) => isObject(raw) && raw.playersCanAdd === true;
+
 export const parseRoomState = (raw: unknown): RoomState => {
   const state = emptyRoomState();
   if (!isObject(raw)) return state;
@@ -377,7 +381,7 @@ export const parseRoomState = (raw: unknown): RoomState => {
   state.rev = parseRev(raw);
   parseStamp(raw, state);
   if (typeof raw.showToPlayers === "boolean") state.showToPlayers = raw.showToPlayers;
-  if (typeof raw.playersCanAdd === "boolean") state.playersCanAdd = raw.playersCanAdd;
+  state.playersCanAdd = parsePlayersCanAdd(raw);
   if (typeof raw.playersCanRemove === "boolean") state.playersCanRemove = raw.playersCanRemove;
   if (Array.isArray(raw.burnedOut)) {
     state.burnedOut = raw.burnedOut
