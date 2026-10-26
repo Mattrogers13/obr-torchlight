@@ -29,11 +29,24 @@ export default function SPA() {
   // App only renders us once Owlbear is ready, and remounts us on every
   // scene change, so every listener must be removed on unmount.
   useEffect(() => {
-    OBR.theme.getTheme().then((theme) => setTheme(theme.mode.toLowerCase()));
-    OBR.player.getRole().then(setRole);
+    OBR.theme
+      .getTheme()
+      .then((theme) => setTheme(theme.mode.toLowerCase()))
+      .catch(() => {}); // keep the default theme
+    // Without a role nothing renders, so a failed lookup retries.
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const loadRole = () =>
+      OBR.player
+        .getRole()
+        .then(setRole)
+        .catch(() => {
+          retry = setTimeout(loadRole, 2000);
+        });
+    loadRole();
     const offTheme = OBR.theme.onChange((theme) => setTheme(theme.mode.toLowerCase()));
     const offPlayer = OBR.player.onChange((player: Player) => setRole(player.role));
     return () => {
+      clearTimeout(retry);
       offTheme();
       offPlayer();
     };

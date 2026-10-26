@@ -1,7 +1,7 @@
 // Light timers and shared room state. Pure functions only: every time-based
 // calculation takes `now` (epoch ms, UTC) so it can be tested deterministically.
 
-import { PLAYER_KEY_PREFIX } from "./constants";
+import { PLAYER_KEY_PREFIX, ROOM_KEY } from "./constants";
 
 export type LightKind = "time" | "turns";
 
@@ -42,8 +42,16 @@ export interface Light {
   tokenId: string | null;
 }
 
-export interface RoomState {
-  // Bumped on every write so clients can ignore stale echoes of older writes.
+// Every doc records who wrote it last (a random id per panel) and that
+// writer's sequence number, so a client can tell a late echo of its own
+// older write (ignore) from anyone else's write (always current).
+export interface Stamp {
+  writer: string;
+  seq: number;
+}
+
+export interface RoomState extends Stamp {
+  // Bumped on every write; informational (staleness uses writer + seq).
   rev: number;
   lights: Light[];
   showToPlayers: boolean;
@@ -59,7 +67,7 @@ export interface RoomState {
 // A player's own lights. Each player writes only their own metadata key, so
 // a player lighting a torch can't clobber a GM edit (or another player's)
 // the way concurrent writes to the single shared key would.
-export interface PlayerDoc {
+export interface PlayerDoc extends Stamp {
   rev: number;
   ownerName: string;
   lights: Light[];
@@ -83,6 +91,8 @@ export const DEFAULT_TURNS = 10;
 
 export const emptyRoomState = (): RoomState => ({
   rev: 0,
+  writer: "",
+  seq: 0,
   lights: [],
   showToPlayers: false,
   playersCanAdd: false,
@@ -90,7 +100,7 @@ export const emptyRoomState = (): RoomState => ({
   burnedOut: [],
 });
 
-export const emptyPlayerDoc = (): PlayerDoc => ({ rev: 0, ownerName: "", lights: [] });
+export const emptyPlayerDoc = (): PlayerDoc => ({ rev: 0, writer: "", seq: 0, ownerName: "", lights: [] });
 
 const clampInt = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, Math.round(value)));
@@ -344,12 +354,28 @@ const parseLights = (raw: unknown, max: number): Light[] => {
 const parseRev = (raw: Record<string, unknown>) =>
   finite(raw.rev) && raw.rev >= 0 ? Math.floor(raw.rev) : 0;
 
+const parseStamp = (raw: Record<string, unknown>, into: Stamp) => {
+  if (typeof raw.writer === "string" && raw.writer.length <= 40) into.writer = raw.writer;
+  if (finite(raw.seq) && raw.seq >= 0) into.seq = Math.floor(raw.seq);
+};
+
+// Torchlight's slice of room metadata, to tell our changes from other
+// extensions' (room metadata is shared by every extension in the room).
+export const torchlightSignature = (metadata: Record<string, unknown>) =>
+  JSON.stringify(
+    Object.keys(metadata)
+      .filter((key) => key === ROOM_KEY || key.startsWith(PLAYER_KEY_PREFIX))
+      .sort()
+      .map((key) => [key, metadata[key]]),
+  );
+
 export const parseRoomState = (raw: unknown): RoomState => {
   const state = emptyRoomState();
   if (!isObject(raw)) return state;
 
   state.lights = parseLights(raw.lights, LIMITS.maxLights);
   state.rev = parseRev(raw);
+  parseStamp(raw, state);
   if (typeof raw.showToPlayers === "boolean") state.showToPlayers = raw.showToPlayers;
   if (typeof raw.playersCanAdd === "boolean") state.playersCanAdd = raw.playersCanAdd;
   if (typeof raw.playersCanRemove === "boolean") state.playersCanRemove = raw.playersCanRemove;
@@ -365,6 +391,7 @@ export const parsePlayerDoc = (raw: unknown): PlayerDoc => {
   const doc = emptyPlayerDoc();
   if (!isObject(raw)) return doc;
   doc.rev = parseRev(raw);
+  parseStamp(raw, doc);
   doc.lights = parseLights(raw.lights, LIMITS.maxPlayerLights);
   if (typeof raw.ownerName === "string") doc.ownerName = cleanName(raw.ownerName, "");
   return doc;

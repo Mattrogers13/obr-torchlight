@@ -3,7 +3,8 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("@owlbear-rodeo/sdk", () => ({ default: {}, buildImage: vi.fn() }));
 
 import { createLight, setAsideLight, pause } from "./lights";
-import { desiredSources, dfLight, parseDfLight, planSync, playerMayLight, rangePx, torchlightSignature } from "./tokenSync";
+import { SYNC_RETRY_MS, desiredSources, dfLight, nextSyncDelay, parseDfLight, planSync, playerMayLight, rangePx } from "./tokenSync";
+import { torchlightSignature } from "./lights";
 import { ROOM_KEY, playerKey } from "./constants";
 
 const T0 = Date.UTC(2026, 9, 15, 20, 0, 0);
@@ -197,3 +198,25 @@ describe("torchlightSignature", () => {
     expect(torchlightSignature({ [ROOM_KEY]: { rev: 1 } })).not.toBe(torchlightSignature({ [ROOM_KEY]: { rev: 2 } }));
   });
 });
+
+describe("nextSyncDelay", () => {
+  const linked = (endsAt: number | null) => ({ ...createLight("a", "T", "time", 60, T0, { tokenId: "tok" }), endsAt });
+
+  it("wakes just after the next linked light runs out", () => {
+    expect(nextSyncDelay([linked(T0 + 5000)], T0, false)).toBe(5250);
+    expect(nextSyncDelay([linked(null)], T0, false)).toBeNull();
+  });
+
+  it("caps a forged far-future end time instead of overflowing setTimeout", () => {
+    const delay = nextSyncDelay([linked(1e15)], T0, false)!;
+    expect(delay).toBeLessThanOrEqual(2 ** 31 - 1);
+    expect(delay).toBeGreaterThan(60_000);
+  });
+
+  it("retries soon after a failure, even with nothing scheduled", () => {
+    expect(nextSyncDelay([linked(T0 + 3_600_000)], T0, true)).toBe(SYNC_RETRY_MS);
+    // The first pass failing (nothing known yet) must still retry.
+    expect(nextSyncDelay([], T0, true)).toBe(SYNC_RETRY_MS);
+  });
+});
+

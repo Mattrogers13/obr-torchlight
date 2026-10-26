@@ -3,7 +3,7 @@ import OBR from "@owlbear-rodeo/sdk";
 
 import { ROOM_KEY, playerKey } from "./constants";
 import { lightFromTokens } from "./lightFromTokens";
-import { lightName } from "./lights";
+import { createLight, lightName } from "./lights";
 
 const room = vi.hoisted(() => ({ metadata: {} as Record<string, unknown> }));
 
@@ -122,6 +122,26 @@ describe("lightFromTokens (token right-click)", () => {
     expect(await lightFromTokens(gm, [tok("Bo")], T0, "light-spell")).toBe("Lit Bo's Light spell (60 min).");
     const sources = (room.metadata[ROOM_KEY] as { lights: { source: string }[] }).lights.map((l) => l.source);
     expect(sources).toEqual(["lantern", "light-spell"]);
+  });
+
+  it("a token skipped at the light limit keeps the player's light burning on it", async () => {
+    const full = Array.from({ length: 19 }, (_, i) => ({
+      ...createLight(`g${i}`, `G${i}`, "time", 60, T0), tokenId: null,
+    }));
+    room.metadata = { [ROOM_KEY]: { playersCanAdd: true, lights: full } };
+    await lightFromTokens(kira, [tok("Kira")], T0);
+    // Room for one more: Bo gets lit, Kira's token is skipped.
+    const msg = await lightFromTokens(gm, [tok("Bo"), tok("Kira")], T0 + 1000);
+    expect(msg).toContain("1 skipped");
+    expect(mine().lights[0]).toMatchObject({ setAside: null });
+  });
+
+  it("stamps its writes as its own writer, not the copied panel's", async () => {
+    room.metadata = { [ROOM_KEY]: { rev: 3, writer: "panel123", seq: 9, playersCanAdd: true } };
+    await lightFromTokens(gm, [tok("Kira")], T0);
+    expect((room.metadata[ROOM_KEY] as { writer: string }).writer).toMatch(/^menu-/);
+    await lightFromTokens(kira, [tok("Kira")], T0);
+    expect((mine() as unknown as { writer: string }).writer).toMatch(/^menu-/);
   });
 });
 
