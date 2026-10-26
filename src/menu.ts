@@ -1,32 +1,40 @@
 import OBR from "@owlbear-rodeo/sdk";
 
+import { broadcastLightOut } from "./alerts";
 import { LightSource } from "./lights";
-import { lightFromTokens } from "./lightFromTokens";
+import { Lighter, Token, lightFromTokens, putOutOnTokens } from "./lightFromTokens";
 import { errorMessage, notify } from "./utils";
 
 // The token right-click submenu (embedded by background.ts): one button per
-// light source. Plain DOM, no React, so it opens instantly.
+// light source, plus Put out light. Plain DOM, no React, so it opens
+// instantly. Keep MENU_HEIGHT in background.ts in step with the row count.
 
-const OPTIONS: { source: LightSource; label: string; icon: string }[] = [
-  { source: "torch", label: "Light torch", icon: "/img/torch-menu.svg" },
-  { source: "lantern", label: "Light lantern", icon: "/img/lantern-menu.svg" },
-  { source: "light-spell", label: "Cast Light", icon: "/img/spell-menu.svg" },
+type Action = LightSource | "put-out";
+
+const OPTIONS: { action: Action; label: string; icon: string }[] = [
+  { action: "torch", label: "Light torch", icon: "/img/torch-menu.svg" },
+  { action: "lantern", label: "Light lantern", icon: "/img/lantern-menu.svg" },
+  { action: "light-spell", label: "Cast Light", icon: "/img/spell-menu.svg" },
+  { action: "put-out", label: "Put out light", icon: "/img/put-out-menu.svg" },
 ];
 
-const light = async (source: LightSource) => {
+// What to tell the user; null when the room-wide alert already says it.
+const run = async (action: Action): Promise<string | null> => {
   const ids = (await OBR.player.getSelection()) ?? [];
   const items = await OBR.scene.items.getItems(ids);
-  const tokens = items
+  const tokens: Token[] = items
     .filter((item) => item.layer === "CHARACTER")
     .map((item) => ({ id: item.id, name: item.name }));
   if (tokens.length === 0) return "Select a character token first.";
   const role = await OBR.player.getRole();
-  return lightFromTokens(
-    { gm: role === "GM", playerId: OBR.player.id, playerName: await OBR.player.getName() },
-    tokens,
-    Date.now(),
-    source,
-  );
+  const who: Lighter = { gm: role === "GM", playerId: OBR.player.id, playerName: await OBR.player.getName() };
+  if (action !== "put-out") return lightFromTokens(who, tokens, Date.now(), action);
+
+  const names = await putOutOnTokens(who, tokens.map((t) => t.id), Date.now());
+  if (names.length === 0) return who.gm ? "No light burning on that token." : "None of your lights are burning there.";
+  // Everyone, this client included, gets "<names> went out!".
+  broadcastLightOut(names);
+  return null;
 };
 
 OBR.onReady(async () => {
@@ -40,7 +48,7 @@ OBR.onReady(async () => {
     );
   }
 
-  const buttons = OPTIONS.map(({ source, label, icon }) => {
+  const buttons = OPTIONS.map(({ action, label, icon }) => {
     const button = document.createElement("button");
     const img = document.createElement("img");
     img.src = icon;
@@ -51,9 +59,10 @@ OBR.onReady(async () => {
     button.addEventListener("click", async () => {
       buttons.forEach((b) => (b.disabled = true));
       try {
-        notify(await light(source), "INFO");
+        const message = await run(action);
+        if (message) notify(message, "INFO");
       } catch (err) {
-        notify(`Torchlight couldn't light it: ${errorMessage(err)}`, "ERROR");
+        notify(`Torchlight couldn't ${action === "put-out" ? "put it out" : "light it"}: ${errorMessage(err)}`, "ERROR");
       } finally {
         buttons.forEach((b) => (b.disabled = false));
       }

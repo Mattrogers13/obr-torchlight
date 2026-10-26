@@ -64,6 +64,10 @@ export interface RoomState extends Stamp {
   // GM's own doc so the GM never has to write a player's doc just to mark
   // a burn-out, which could overwrite a light the player lit that instant.
   burnedOut: string[];
+  // Radius (ft) of the Dynamic Fog light a token gets when its light stops
+  // and it had none before, so players can still see their own token.
+  // 0 = no light.
+  unlitFt: number;
 }
 
 // A player's own lights. Each player writes only their own metadata key, so
@@ -85,10 +89,15 @@ export const LIMITS = {
   maxMinutes: 1440,
   minTurns: 1,
   maxTurns: 100,
+  maxUnlitFt: 30,
 };
 
 export const DEFAULT_MINUTES = 60;
 export const DEFAULT_TURNS = 10;
+export const DEFAULT_UNLIT_FT = 3;
+
+// The GM's "Time passes" steps, in minutes.
+export const TIME_PASSES = [1, 5, 10, 30, 60];
 
 export const emptyRoomState = (): RoomState => ({
   rev: 0,
@@ -99,6 +108,7 @@ export const emptyRoomState = (): RoomState => ({
   playersCanAdd: false,
   playersCanRemove: false,
   burnedOut: [],
+  unlitFt: DEFAULT_UNLIT_FT,
 });
 
 export const emptyPlayerDoc = (): PlayerDoc => ({ rev: 0, writer: "", seq: 0, ownerName: "", lights: [] });
@@ -233,6 +243,24 @@ export const adjustTime = (light: Light, deltaSec: number, now: number): Light =
     alerted: left > 0 ? false : light.alerted,
     rearmed: rearm ? light.rearmed + 1 : light.rearmed,
   };
+};
+
+// Time skips ahead (a rest, travel): every lit real-time light loses that
+// much, including ones frozen by Pause all. Put-out, swapped, burned-out and
+// turn-counted lights are untouched.
+export const passTime = (lights: Light[], deltaSec: number, now: number): Light[] =>
+  mapLights(lights, (l) => (l.kind === "time" && isActive(l, now) ? adjustTime(l, -deltaSec, now) : l));
+
+// Puts out every active light `hit` picks; returns the new list (same array
+// if nothing changed) and the names put out.
+export const putOutLights = (lights: Light[], hit: (light: Light) => boolean, now: number) => {
+  const names: string[] = [];
+  const next = mapLights(lights, (l) => {
+    if (!hit(l) || !isActive(l, now)) return l;
+    names.push(l.name);
+    return setAsideLight(l, now, "put-out");
+  });
+  return { lights: next, names };
 };
 
 export const adjustTurns =(light: Light, delta: number): Light => {
@@ -403,6 +431,7 @@ export const parseRoomState = (raw: unknown): RoomState => {
       .filter((k): k is string => typeof k === "string" && k.length <= 120)
       .slice(-LIMITS.maxBurnedOut);
   }
+  if (finite(raw.unlitFt)) state.unlitFt = clampInt(raw.unlitFt, 0, LIMITS.maxUnlitFt);
   return state;
 };
 
