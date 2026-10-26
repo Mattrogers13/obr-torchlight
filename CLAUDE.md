@@ -59,14 +59,14 @@ The app has two distinct entry modes controlled by URL parameters:
 
 Entry point: `src/main.tsx`
 
-A second page, `background.html` → `src/background.ts` (manifest `background_url: "/background"`; Cloudflare 307s `.html` URLs to the extensionless path), runs while Torchlight is enabled in the room, panel open or not. It registers one "Torchlight" token right-click entry whose embedded submenu is a third page, `menu.html` → `src/menu.ts` (embed url `/menu`, plain DOM, no React): Light torch / Light lantern / Cast Light. Both write through `src/lightFromTokens.ts` (same permission rules as the panel). Keep it free of React imports; metadata keys live in `src/constants.ts` for that reason.
+A second page, `background.html` → `src/background.ts` (manifest `background_url: "/background"`; Cloudflare 307s `.html` URLs to the extensionless path), runs while Torchlight is enabled in the room, panel open or not. It registers one "Torchlight" token right-click entry whose embedded submenu is a third page, `menu.html` → `src/menu.ts` (embed url `/menu`, plain DOM, no React): Light torch / Light lantern / Cast Light / Put out light (height `MENU_HEIGHT` in background.ts tracks the row count). Both write through `src/lightFromTokens.ts` (same permission rules as the panel). Keep it free of React imports; metadata keys live in `src/constants.ts` for that reason.
 
 On the GM's client the background page also runs `src/tokenSync.ts`: tokens with an active linked light get that source's Dynamic Fog light plus a badge, and get their previous light back when it stops. Details (light shape, badge regeneration, `planSync`, when it runs): `docs/token-sync.md`. Rules not to break:
 
 - Raster images are WebP (badges lossless, `mime: "image/webp"`). Item images must never be SVG (Chrome draws a black square in Owlbear's canvas). Exception: the manifest icon stays `logo.png` until Owlbear WebP support is confirmed.
 - Player docs can be forged: a player's light only reaches a token that is visible and that player could edit (`playerMayLight`), or a tampered doc could light a hidden monster through the GM's client.
 
-The plugin ID `"io.github.mattrogers13.torchlight"` is exported as `ID` from `src/constants.ts` (with the room metadata keys; `components/util/constants.ts` holds only route paths) and prefixes the room metadata key and broadcast channel.
+The plugin ID `"io.github.mattrogers13.torchlight"` is exported as `ID` from `src/constants.ts` (with the room metadata keys; `components/util/constants.ts` holds only route paths) and prefixes the room metadata keys and broadcast channels.
 
 ### Owlbear Rodeo Integration
 
@@ -77,9 +77,10 @@ The app uses `@owlbear-rodeo/sdk` for integration with Owlbear Rodeo:
 - **Theme Sync**: OBR's light/dark theme is applied by toggling the `dark` class on `<html>` in `SPA.tsx`
 - **Roles**: `SPA.tsx` renders nothing until `OBR.player.getRole()` resolves, so a player never briefly runs GM logic
 
-Shared state lives in OBR room metadata under `${ID}/state` (see State Management). One broadcast channel:
+Shared state lives in OBR room metadata under `${ID}/state` (see State Management). Two broadcast channels, both sent with `destination: "ALL"` and shown by `listenForAlerts` on the background page (never in the panel too, or clients with it open get two notices):
 
-- `${ID}/light-out`: array of light names that just burned out; sent by a GM client with `destination: "ALL"`, every client shows the notification
+- `${ID}/light-out`: array of light names that just burned out or were put out (GM panel, right-click menu)
+- `${ID}/time-passes`: minutes skipped by the GM's Time passes
 
 Manifest limits: `name` ≤ 45, `description` ≤ 128 chars (enforced by `src/manifest.test.ts`).
 
@@ -99,8 +100,8 @@ Route paths are defined in `src/components/util/constants.ts`.
 - **Main.tsx**: Wiring only: loads room state (`useRoomState`), builds the combined light list, runs the alert hooks, renders `GmPanel` or `PlayerPanel`
 - **GmPanel.tsx**: GM view and all GM actions (bulk actions, permissions, add, per-light controls)
 - **PlayerPanel.tsx**: Player view: one list (own lights first), add one at a time, remove own if allowed
-- **hooks/useGmAlerts.ts**: GM-only alerting (player lit/paused/removed notifications, burn-out detection/record/broadcast) and `useLightOutListener` (everyone)
-- **alerts.ts**: the `light-out` broadcast channel, its parser, and `broadcastLightOut`
+- **hooks/useGmAlerts.ts**: GM-only alerting (player lit/paused/removed notifications, burn-out detection/record/broadcast)
+- **alerts.ts**: the broadcast channels, their parsers, senders, and `listenForAlerts`
 - **Lights.tsx**: Add-light form, GM light rows, bulk actions, Active-only filter, and the player light list
 - **SPA.tsx**: Sets up router, detects player role, syncs OBR theme to `dark` CSS class
 - **Navbar.tsx**: Tab navigation (Main / About), renders the `WhatsNew` modal, shows dev mode banner
@@ -124,6 +125,7 @@ Timer logic is pure functions in `src/lights.ts` (every time calc takes `now`, e
 - Multi-player GM actions are one `updateLights` write. Edit with `mapLights`, not `.map`.
 - The GM never writes a player's doc just to mark a burn-out (`burnedOut` lives in shared state).
 - Room metadata is capped at 16 kB across all extensions.
+- New `RoomState` fields need a parse default: `parseRoomState` drops unknown keys, so a panel on an older build erases a new field on its next write (it reverts to the default until everyone updates).
 - For sync bugs, simplify the mechanism rather than add special cases (that cascaded across review rounds), and prefer a real Owlbear test over another review round.
 
 localStorage keys (per browser, not shared). Always go through `src/storage.ts` (`readLocal` / `writeLocal`): localStorage throws in Owlbear's iframe under strict privacy settings, and an unguarded read during render blanks the panel.
@@ -151,9 +153,11 @@ Two installs in Owlbear, each added once:
 ### Workflow
 
 - Branch + PR per change; squash-merge after CI and Workers Builds both pass. Features that need in-Owlbear testing stay open until the manual pass (`TESTING.md`).
+- `TESTING.md` is the manual pass for the current feature PR: rewrite its steps (keep "Known quirk" and the Results table) rather than appending.
 - To review in Owlbear, rebuild `dev` from main plus the open PR branches and force-push it: `git checkout -B dev origin/main && git merge --no-edit <branches...> && git push -f origin dev`. `dev` is disposable; never PR from it or merge it into main.
 - Stacked PRs: `gh pr edit N --base main` before deleting the branch it's based on (deleting a base auto-closes PRs on it). Run multi-step git loops under `bash`, not zsh (no word-splitting of `$var`).
-- Versions are dates (`YYYY-MM-DD` in package.json and manifest.json; a second release the same day is `YYYY-MM-DD.1`, then `.2`) and drive the WhatsNew modal (shows on any change, not just newer). Add matching entries to `src/releaseNotes.ts` and `RELEASE-NOTES.md`.
+- While PRs are stacked and unmerged, branch new work off the top of the stack and set `--base` to that branch; `dev` is then just `origin/main` + the top branch.
+- Versions are dates (`YYYY-MM-DD` in package.json and manifest.json; a second release the same day is `YYYY-MM-DD.1`, then `.2`) and drive the WhatsNew modal (shows on any change, not just newer). Add matching entries to `src/releaseNotes.ts` and `RELEASE-NOTES.md`; while that version is unmerged, amend its entry instead of adding another version.
 
 ### Theming
 

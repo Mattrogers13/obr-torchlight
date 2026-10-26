@@ -4,6 +4,7 @@ import { ID, ROOM_KEY } from "./constants";
 import {
   Light,
   LightSource,
+  RoomState,
   SOURCES,
   isActive,
   isRunning,
@@ -17,7 +18,8 @@ import { errorMessage, onRoleChange } from "./utils";
 // Keeps tokens' Dynamic Fog lights in step with Torchlight's timers: a token
 // with a burning light gets that source's light and a small badge; when the
 // light stops (burns out, is put out, or is swapped for a new one) the
-// token's previous light comes back. A Pause all for a table break leaves
+// token's previous light comes back, or the GM's unlit light (3 ft by
+// default) if it had none. A Pause all for a table break leaves
 // the token lit. Runs from the GM's background page.
 
 // Dynamic Fog stores a token's light here (github.com/owlbear-rodeo/dynamic-fog).
@@ -124,13 +126,15 @@ const sameLight = (a: unknown, b: DfLight) =>
   a !== null &&
   (Object.keys(b) as (keyof DfLight)[]).every((k) => (a as Record<string, unknown>)[k] === b[k]);
 
-// Pure: what to change so the scene matches `desired`.
+// Pure: what to change so the scene matches `desired`. `unlit` is the light
+// a token goes back to when it had none before we lit it (null = none).
 export const planSync = (
   desired: Map<string, LightSource>,
   tokens: TokenState[],
   badges: BadgeState[],
   pxFor: (source: LightSource) => number,
   imageFor: (source: LightSource) => string = () => "",
+  unlit: DfLight | null = null,
 ): SyncPlan => {
   const plan: SyncPlan = { apply: [], restore: [], addBadges: [], deleteBadges: [] };
   const present = new Set(tokens.map((t) => t.id));
@@ -145,7 +149,7 @@ export const planSync = (
         plan.apply.push({ tokenId: token.id, source: want, saved: token.marker.saved });
       }
     } else if (token.marker) {
-      plan.restore.push({ tokenId: token.id, saved: token.marker.saved });
+      plan.restore.push({ tokenId: token.id, saved: token.marker.saved ?? unlit });
     }
   }
 
@@ -194,8 +198,8 @@ const parseMarker = (v: unknown): TokenMarker | undefined => {
     : undefined;
 };
 
-const allLights = (metadata: Record<string, unknown>): OwnedLight[] => {
-  const owned: OwnedLight[] = parseRoomState(metadata[ROOM_KEY]).lights.map((light) => ({ light, ownerId: null }));
+const allLights = (metadata: Record<string, unknown>, state: RoomState): OwnedLight[] => {
+  const owned: OwnedLight[] = state.lights.map((light) => ({ light, ownerId: null }));
   for (const [ownerId, doc] of Object.entries(parsePlayerDocs(metadata))) {
     owned.push(...doc.lights.map((light) => ({ light, ownerId })));
   }
@@ -232,7 +236,8 @@ export const syncOnce = async () => {
   if (role !== "GM" || !ready) return;
 
   const now = Date.now();
-  const owned = allLights(metadata);
+  const state = parseRoomState(metadata[ROOM_KEY]);
+  const owned = allLights(metadata, state);
   const linked = new Set(owned.map((o) => o.light.tokenId).filter((id): id is string => !!id));
 
   // One pass over the scene for both linked tokens and our badges.
@@ -254,8 +259,8 @@ export const syncOnce = async () => {
     now,
     (tokenId, ownerId) => ownerId === null || playerMayLight(tokensById.get(tokenId), ownerId, permissions),
   );
-  const pxFor = (source: LightSource) =>
-    rangePx(SOURCES[source].rangeFt, dpi, scale.parsed.unit, scale.parsed.multiplier);
+  const pxForFt = (ft: number) => rangePx(ft, dpi, scale.parsed.unit, scale.parsed.multiplier);
+  const pxFor = (source: LightSource) => pxForFt(SOURCES[source].rangeFt);
 
   const plan = planSync(
     desired,
@@ -275,6 +280,7 @@ export const syncOnce = async () => {
     }),
     pxFor,
     (source) => badgeImage(window.location.origin, source),
+    state.unlitFt > 0 ? dfLight(pxForFt(state.unlitFt)) : null,
   );
 
   const apply = new Map(plan.apply.map((a) => [a.tokenId, a]));

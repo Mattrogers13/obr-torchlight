@@ -9,7 +9,7 @@ Every token with an active linked light (`tokenId`) gets:
 - That source's Dynamic Fog light (`rodeo.owlbear.dynamic-fog/light`): range from `SOURCES` converted with the grid scale, full circle, PRIMARY, solid edge `falloff: 0.2`.
 - A badge attachment (`public/img/badge-<source>.webp`). Badges whose image URL isn't current are replaced automatically, so changing the URL (or format) migrates existing tokens.
 
-The token's previous light (e.g. the GM's 3 ft light so players can see their own token) is saved under `${ID}/token` and restored when the light stops: burns out, put out, or swapped. A Pause all leaves tokens lit. Saved lights are reduced to known Dynamic Fog fields (`parseDfLight`).
+The token's previous light (e.g. the GM's 3 ft light so players can see their own token) is saved under `${ID}/token` and restored when the light stops: burns out, put out, or swapped. A token that had no light gets the GM's "Light when unlit" instead (`unlitFt` in shared state, default 3 ft, 0 = none); it's applied at restore time, and after that it's simply that token's light, so changing the setting doesn't touch tokens already restored. A Pause all leaves tokens lit. Saved lights are reduced to known Dynamic Fog fields (`parseDfLight`).
 
 Needs Dynamic Fog in the room to actually cast light; without it only the badge shows.
 

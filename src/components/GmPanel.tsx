@@ -1,6 +1,6 @@
-import React, { MutableRefObject } from "react";
+import React, { MutableRefObject, useEffect, useState } from "react";
 
-import { broadcastLightOut } from "../alerts";
+import { broadcastLightOut, broadcastTimePasses } from "../alerts";
 import { useActiveOnly } from "../hooks/useActiveOnly";
 import {
   LIMITS,
@@ -16,10 +16,11 @@ import {
   isRunning,
   mapLights,
   nextDefaultName,
+  passTime,
   pause,
+  putOutLights,
   reset,
   resume,
-  setAsideLight,
 } from "../lights";
 import {
   ActiveFilter,
@@ -30,6 +31,38 @@ import {
   LightEntry,
   LightRow,
 } from "./Lights";
+
+// "Light when unlit" in feet. Saved on blur or Enter (not per keystroke, so
+// clearing the field to retype doesn't write); out-of-range values are
+// clamped, junk goes back to the saved value.
+const UnlitInput: React.FC<{ value: number; onSave: (ft: number) => void }> = ({ value, onSave }) => {
+  const [draft, setDraft] = useState(String(value));
+  // Follow changes from other clients.
+  useEffect(() => setDraft(String(value)), [value]);
+  const commit = () => {
+    const n = Number(draft);
+    if (draft.trim() === "" || !Number.isFinite(n)) return setDraft(String(value));
+    const ft = Math.min(LIMITS.maxUnlitFt, Math.max(0, Math.round(n)));
+    setDraft(String(ft));
+    if (ft !== value) onSave(ft);
+  };
+  return (
+    <label className="flex items-center gap-2" title="What a token that had no light gets when its light stops (0 = none)">
+      Light when unlit:
+      <input
+        type="number"
+        min={0}
+        max={LIMITS.maxUnlitFt}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+        className="w-16 px-2 py-1 border border-theme rounded bg-theme-card text-theme"
+      />
+      ft
+    </label>
+  );
+};
 
 // The GM's view: bulk actions, player permissions, the add form, and every
 // light in the room with full controls.
@@ -104,15 +137,25 @@ const GmPanel: React.FC<{
     const putOutNow: string[] = [];
     changeLights(
       hit.map((e) => e.ownerId),
-      (lights) =>
-        mapLights(lights, (l) => {
-          if (!ids.has(l.id) || !isActive(l, t)) return l;
-          putOutNow.push(l.name);
-          return setAsideLight(l, t, "put-out");
-        }),
+      (lights) => {
+        const out = putOutLights(lights, (l) => ids.has(l.id), t);
+        putOutNow.push(...out.names);
+        return out.lights;
+      },
     ).then((saved) => {
       // Only tell the room once the lights really are out.
       if (saved) broadcastLightOut(putOutNow);
+    });
+  };
+
+  // Time skips ahead for every lit real-time light, players' included.
+  const passMinutes = (minutes: number) => {
+    const t = Date.now();
+    changeLights(
+      entries.filter((e) => e.light.kind === "time" && isActive(e.light, t)).map((e) => e.ownerId),
+      (lights) => passTime(lights, minutes * 60, t),
+    ).then((saved) => {
+      if (saved) broadcastTimePasses(minutes);
     });
   };
 
@@ -143,6 +186,8 @@ const GmPanel: React.FC<{
         onSetAllRunning={setAllRunning}
         onPutOut={putOut}
         onRemoveAll={() => removeLights(entries, () => [])}
+        canPassTime={timeLights.length > 0}
+        onPassTime={passMinutes}
       />
 
       <div className="bg-theme-card rounded-lg border border-theme p-4 mt-4 mb-4">
@@ -173,6 +218,7 @@ const GmPanel: React.FC<{
             />
             Players can remove their own
           </label>
+          <UnlitInput value={state.unlitFt} onSave={(unlitFt) => update((s) => ({ ...s, unlitFt }))} />
         </div>
         <AddLightForm
           defaultName={() => nextDefaultName(state.lights)}

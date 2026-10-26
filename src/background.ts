@@ -1,5 +1,6 @@
 import OBR, { ContextMenuItem } from "@owlbear-rodeo/sdk";
 
+import { listenForAlerts } from "./alerts";
 import { ID, ROOM_KEY } from "./constants";
 import { parsePlayersCanAdd } from "./lights";
 import { startTokenSync } from "./tokenSync";
@@ -8,14 +9,15 @@ import { errorMessage, onRoleChange } from "./utils";
 // Runs whenever Torchlight is enabled in the room, panel open or not.
 // Adds one "Torchlight" entry to the right-click menu of character tokens;
 // it opens a small embedded submenu (menu.html / src/menu.ts) with the three
-// light sources. On the GM's client it also keeps token lights in step with
-// the timers (tokenSync.ts).
+// light sources and Put out light. Shows the room's alerts (alerts.ts). On
+// the GM's client it also keeps token lights in step with the timers
+// (tokenSync.ts).
 
 const MENU_ID = `${ID}/light-menu`;
 // First retry after Owlbear fails to add or remove the menu (then doubling).
 const MENU_RETRY_MS = 5000;
-// Height of the embedded submenu: 3 rows of 36px plus 8px padding (menu.html).
-const MENU_HEIGHT = 116;
+// Height of the embedded submenu: 4 rows of 36px plus 8px padding (menu.html).
+const MENU_HEIGHT = 152;
 
 const MENU: ContextMenuItem = {
   id: MENU_ID,
@@ -36,6 +38,8 @@ const MENU: ContextMenuItem = {
 };
 
 OBR.onReady(async () => {
+  // Everyone: the went-out and time-passes notifications.
+  listenForAlerts();
   // What Owlbear currently has. Only updated after create/remove succeeds,
   // so a failed call is retried instead of sticking.
   let shown: boolean | null = null;
