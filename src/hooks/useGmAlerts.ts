@@ -106,20 +106,29 @@ export const useGmAlerts = ({
     const announced = (e: LightEntry) =>
       e.light.alerted || (e.ownerId !== null && recorded.has(burnKey(e.light)));
     // Forget lights that are gone, or burning again.
-    const liveIds = new Set(entries.map((e) => e.light.id));
+    const byId = new Map(entries.map((e) => [e.light.id, e]));
+    const liveIds = new Set(byId.keys());
     for (const id of [...recording.current.keys(), ...broadcast.current]) {
-      const e = entries.find((x) => x.light.id === id);
-      if (!liveIds.has(id) || (e && !isOut(e.light, now))) {
+      const e = byId.get(id);
+      if (!e || !isOut(e.light, now)) {
         recording.current.delete(id);
         broadcast.current.delete(id);
       }
     }
 
     // Wake when the earliest retry for a light still needing one is due.
-    const scheduleWake = () => {
+    // Lights recorded in this run are skipped: if their save fails, the
+    // re-read reverts them and this effect runs again and schedules then.
+    const scheduleWake = (justRecorded = new Set<string>()) => {
       clearTimeout(retryTimer.current);
       const due = entries
-        .filter((e) => isOut(e.light, now) && !announced(e) && recording.current.has(e.light.id))
+        .filter(
+          (e) =>
+            isOut(e.light, now) &&
+            !announced(e) &&
+            !justRecorded.has(e.light.id) &&
+            recording.current.has(e.light.id),
+        )
         .map((e) => recording.current.get(e.light.id)!);
       if (due.length > 0) {
         const wait = Math.max(0, Math.min(...due) - Date.now()) + 50;
@@ -174,7 +183,7 @@ export const useGmAlerts = ({
       fresh.forEach((e) => broadcast.current.add(e.light.id));
       broadcastLightOut(fresh.map((e) => e.light.name));
     });
-    scheduleWake();
+    scheduleWake(new Set(burnedOut.map((e) => e.light.id)));
   }, [gm, loaded, entries, state.burnedOut, now, update, retryTick]);
 
   return { removedByMe, restoredAfterFailure };
